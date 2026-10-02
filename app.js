@@ -1,5 +1,6 @@
 import { firebaseConfig } from "./config.js";
 import { demoData } from "./demo.js";
+import { pebble, flower, token, mark, ribbons, scan, transition, backdrop, blobD, hash } from "./organic.js";
 
 /* ================= helpers ================= */
 const $ = s => document.querySelector(s);
@@ -50,16 +51,8 @@ const ICON = {
   back: '<path d="M15 5l-7 7 7 7"/>'
 };
 const svg = (k, size) => '<svg viewBox="0 0 24 24" width="' + (size || 22) + '" height="' + (size || 22) + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
-const MARK = '<svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="12" fill="var(--lime)"/><circle cx="15.5" cy="20" r="9" fill="var(--peri)"/><circle cx="24.5" cy="20" r="9" fill="var(--pink)" style="mix-blend-mode:multiply"/><circle cx="15.5" cy="20" r="9" fill="none" stroke="#15162b" stroke-width="2.4"/><circle cx="24.5" cy="20" r="9" fill="none" stroke="#15162b" stroke-width="2.4"/></svg>';
-function burst(big, small, fill, ink) {
-  const n = 14, cx = 52, cy = 52, pts = [];
-  for (let i = 0; i < n * 2; i++) { const a = Math.PI * i / n - Math.PI / 2, r = i % 2 ? 41 : 51; pts.push((cx + r * Math.cos(a)).toFixed(1) + "," + (cy + r * Math.sin(a)).toFixed(1)); }
-  return '<svg class="burst" viewBox="0 0 104 104" aria-hidden="true"><polygon points="' + pts.join(" ") + '" fill="' + fill + '"/><text x="52" y="' + (small ? 54 : 61) + '" text-anchor="middle" font-size="' + (String(big).length > 4 ? 24 : 32) + '" fill="' + ink + '">' + esc(big) + '</text>' + (small ? '<text x="52" y="71" text-anchor="middle" font-size="12" fill="' + ink + '" font-family="Instrument Sans, sans-serif" font-weight="600">' + esc(small) + '</text>' : "") + '</svg>';
-}
-const SQUIG = '<svg class="squig" viewBox="0 0 170 70" aria-hidden="true"><path d="M4 52 C 22 8, 46 8, 56 40 S 86 70, 100 36 S 132 2, 150 28 S 164 58, 167 44" fill="none" stroke="#f2652f" stroke-width="4" stroke-linecap="round"/><path d="M14 62 C 40 40, 64 66, 90 52" fill="none" stroke="#2b2f73" stroke-width="3" stroke-linecap="round"/></svg>';
-function chipDisc(color, emoji, state) {
-  return '<svg class="disc" viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="38" fill="' + color + '"/><circle cx="40" cy="40" r="30.5" fill="none" stroke="#15162b" stroke-width="7" stroke-dasharray="9 7"/><circle cx="40" cy="40" r="22" fill="#fbf6ee"/><text x="40" y="48" text-anchor="middle" font-size="22">' + esc(emoji || "\uD83C\uDFAF") + '</text>' + (state === "won" ? '<circle cx="64" cy="16" r="12" fill="#7bd88f" stroke="#15162b" stroke-width="2.5"/><path d="M58 16l4 4 8-8" fill="none" stroke="#15162b" stroke-width="3" stroke-linecap="round"/>' : "") + '</svg>';
-}
+const MARK = mark();
+const SQUIG = ribbons();
 
 /* ================= state ================= */
 const S = {
@@ -458,12 +451,12 @@ function confetti() {
   cv = document.createElement("canvas"); cv.id = "confetti"; document.body.appendChild(cv);
   const ctx = cv.getContext("2d"), dpr = window.devicePixelRatio || 1;
   cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; ctx.scale(dpr, dpr);
-  const cs = getComputedStyle(document.documentElement), cols = ["--c-blue", "--c-rose", "--c-ochre", "--c-green", "--c-purple", "--c-teal", "--c-orange"].map(v => cs.getPropertyValue(v).trim() || "#c4447a");
-  const P = Array.from({ length: 140 }, () => ({ x: innerWidth / 2 + (Math.random() - .5) * 80, y: innerHeight * .35, vx: (Math.random() - .5) * 14, vy: -Math.random() * 13 - 4, r: Math.random() * 6 + 4, a: Math.random() * 6, va: (Math.random() - .5) * .4, c: cols[Math.floor(Math.random() * cols.length)] }));
+  const cols = ["#d9f15a", "#f6a9cf", "#8f9bf5", "#f2652f", "#7bd88f", "#fbebdd"], shapes = [1, 2, 3, 4, 5].map(k => new Path2D(blobD(hash("cf" + k), 0, 0, 1, .28, 0)));
+  const P = Array.from({ length: 140 }, () => ({ x: innerWidth / 2 + (Math.random() - .5) * 80, y: innerHeight * .35, vx: (Math.random() - .5) * 14, vy: -Math.random() * 13 - 4, r: Math.random() * 5 + 4, sh: Math.floor(Math.random() * 5), a: Math.random() * 6, va: (Math.random() - .5) * .4, c: cols[Math.floor(Math.random() * cols.length)] }));
   const t0 = performance.now();
   (function frame(t) {
     const el = t - t0; ctx.clearRect(0, 0, innerWidth, innerHeight);
-    P.forEach(p => { p.vy += .38; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.a += p.va; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.globalAlpha = Math.max(0, 1 - el / 2200); ctx.fillStyle = p.c; ctx.fillRect(-p.r / 2, -p.r / 4, p.r, p.r / 2); ctx.restore(); });
+    P.forEach(p => { p.vy += .38; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.a += p.va; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.globalAlpha = Math.max(0, 1 - el / 2200); ctx.fillStyle = p.c; ctx.scale(p.r, p.r * (.6 + .4 * Math.abs(Math.sin(p.a * 2)))); ctx.fill(shapes[p.sh]); ctx.restore(); });
     if (el < 2200) requestAnimationFrame(frame); else cv.remove();
   })(t0);
 }
@@ -483,14 +476,17 @@ function draw() {
   const ae = document.activeElement;
   if (ae && app.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName) && ae.closest("[data-keep]")) { pendingDraw = true; return; }
   pendingDraw = false;
-  if (S.mode === "live" && !S.user) { app.innerHTML = vLogin(); return; }
-  if (!ready()) { app.innerHTML = '<div class="boot">Loading your money…</div>'; return; }
-  if (!S.meta || !S.meta.lastClosed) { app.innerHTML = vWelcome(); return; }
+  if (S.mode === "live" && !S.user) { app.innerHTML = vLogin(); scan(app); return; }
+  if (!ready()) { app.innerHTML = '<div class="boot">' + BOOT + 'Loading your money…</div>'; scan(app); return; }
+  if (!S.meta || !S.meta.lastClosed) { app.innerHTML = vWelcome(); scan(app); return; }
   const r = ui.route;
   const body = r === "spend" ? vSpend() : r === "flow" ? vFlow() : r === "plan" ? vPlan() : r === "insights" ? vInsights() : r === "statement" ? vStatement(ui.sub) : r === "settings" ? vSettings() : r === "import" ? vImport() : vHome();
   const y = window.scrollY;
   app.innerHTML = shell(body);
   app.classList.toggle("anim", !!ui.animate);
+  if (ui.animate) Array.from(app.querySelectorAll(".main > *, .bento > *, .rings > *, .people > *, .challenge-row > *")).forEach((el, i) => el.style.setProperty("--i", Math.min(i, 14)));
+  placeNav();
+  scan(app);
   if (ui.animate) { countUp(); setTimeout(() => app.classList.remove("anim"), 1100); }
   ui.animate = false;
   if (ui.keepScroll) window.scrollTo(0, y);
@@ -498,16 +494,30 @@ function draw() {
 }
 document.addEventListener("focusout", () => setTimeout(() => { if (pendingDraw) { const ae = document.activeElement; if (!(ae && ae.closest && ae.closest("[data-keep]") && /INPUT|SELECT|TEXTAREA/.test(ae.tagName))) { ui.keepScroll = true; render(); } } }, 0));
 
+const BOOT = '<svg class="bootblob" viewBox="0 0 100 100" aria-hidden="true"><path data-blob="77" data-g="50,50,34,.2,0,2.4" fill="var(--lime)" d="' + blobD(77, 50, 50, 34, .2, 0) + '"/></svg>';
+let navPos = null;
+function placeNav() {
+  document.querySelectorAll(".navblob").forEach(nb => {
+    const on = nb.parentElement.querySelector(".navbtn.on"); if (!on) { nb.style.opacity = 0; return; }
+    const pr = nb.parentElement.getBoundingClientRect(), r = on.getBoundingClientRect();
+    const to = { x: r.left - pr.left, y: r.top - pr.top, w: r.width, h: r.height }, key = nb.dataset.k;
+    const from = navPos && navPos[key];
+    const set = p => { nb.style.transform = "translate(" + p.x + "px," + p.y + "px)"; nb.style.width = p.w + "px"; nb.style.height = p.h + "px"; };
+    if (from) { nb.style.transition = "none"; set(from); nb.getBoundingClientRect(); nb.style.transition = ""; }
+    set(to); navPos = Object.assign(navPos || {}, { [key]: to });
+  });
+}
+window.addEventListener("resize", () => { navPos = null; placeNav(); });
 function shell(body) {
   const nav = [["home", "Home", "home"], ["spend", "Spending", "spend"], ["flow", "Cash flow", "flow"], ["plan", "Plan", "plan"], ["insights", "Insights", "insight"]];
   const cur = ui.route === "statement" ? "insights" : ui.route === "import" ? "spend" : ui.route;
   const links = () => nav.map(n => '<a class="navbtn' + (cur === n[0] ? " on" : "") + '" href="#' + n[0] + '">' + svg(n[2]) + n[1] + '</a>').join("");
   const brand = '<a class="brand" href="#home">' + MARK + '<span><b>' + esc(nm("m")) + ' &amp; ' + esc(nm("s")) + '</b><small>Household money</small></span></a>';
-  return '<div class="shell"><aside class="side">' + brand + links() + '<span class="grow"></span><a class="navbtn' + (cur === "settings" ? " on" : "") + '" href="#settings">' + svg("gear") + 'Settings</a></aside>'
+  return '<div class="shell"><aside class="side">' + brand + '<div class="sidenav"><span class="navblob" data-k="side"></span>' + links() + '</div><span class="grow"></span><a class="navbtn' + (cur === "settings" ? " on" : "") + '" href="#settings">' + svg("gear") + 'Settings</a></aside>'
     + '<main class="main"><header class="top">' + brand + '<span class="grow"></span><a class="roundbtn" href="#settings" aria-label="Settings">' + svg("gear", 20) + '</a></header>'
     + (S.mode === "demo" ? '<div class="banner info noprint" style="margin-bottom:14px">Sample numbers only. Nothing here is real or shared.</div>' : "")
     + body + '</main></div>'
-    + '<nav class="bottom"><div class="in">' + links() + '</div></nav>'
+    + '<nav class="bottom"><div class="in"><span class="navblob" data-k="bottom"></span>' + links() + '</div></nav>'
     + (["home", "spend"].includes(ui.route) ? '<button class="fab" data-act="addexp" aria-label="Add spending">' + svg("plus") + 'Add spending</button>' : "");
 }
 
@@ -531,20 +541,7 @@ function vWelcome() {
 }
 
 /* ---- rings ---- */
-function ring(opts) {
-  const R = 44, C = 2 * Math.PI * R;
-  let off = 0, arcs = "";
-  (opts.segs || []).forEach(sg => {
-    const f = Math.max(0, Math.min(1 - off, sg.f || 0)); if (f <= 0) return;
-    arcs += '<circle class="ring-arc" cx="56" cy="56" r="' + R + '" fill="none" stroke="' + (opts.over ? "var(--bad)" : sg.c) + '" stroke-width="14" stroke-dasharray="' + (f * C).toFixed(2) + ' ' + C.toFixed(2) + '" stroke-dashoffset="' + (-off * C).toFixed(2) + '" transform="rotate(-90 56 56)"/>';
-    off += f;
-  });
-  const hasE = !!opts.emoji;
-  return '<svg viewBox="0 0 112 112" role="img" aria-label="' + esc(opts.label || "") + '"><circle cx="56" cy="56" r="' + R + '" fill="none" stroke="url(#hatch)" stroke-width="14"/>' + arcs
-    + (hasE ? '<text x="56" y="44" text-anchor="middle" font-size="18">' + esc(opts.emoji) + '</text>' : "")
-    + '<text x="56" y="' + (hasE ? 66 : (opts.sub ? 56 : 62)) + '" text-anchor="middle" font-family="Big Shoulders Display, Impact, sans-serif" font-weight="900" font-size="' + (hasE ? 21 : 24) + '" fill="var(--ink)">' + esc(opts.centre) + '</text>'
-    + (opts.sub ? '<text x="56" y="' + (hasE ? 80 : 73) + '" text-anchor="middle" font-size="11" fill="var(--muted)">' + esc(opts.sub) + '</text>' : "") + '</svg>';
-}
+function ring(opts) { return pebble(opts); }
 function jointSegs(frac, item) {
   if (item.who !== "j" || item.color) return [{ f: frac, c: itemColor(item) }];
   const sh = jointShares(), t = sh.m + sh.s; const a = t > 0 ? sh.m / t : .5;
@@ -563,7 +560,7 @@ function vHome() {
   h += '<div class="bento">';
   // hero
   const perDay = Math.max(0, safe.perDay);
-  h += '<section class="tile t-lime b-hero">' + burst(String(safe.daysLeft), safe.daysLeft === 1 ? "day left" : "days left", "#15162b", "#d9f15a") + SQUIG
+  h += '<section class="tile t-lime b-hero">' + flower(String(safe.daysLeft), safe.daysLeft === 1 ? "day left" : "days left", "#15162b", "#d9f15a", "days" + ym) + SQUIG
     + (S.budgets.length
       ? '<span class="k">Safe to spend today</span><span class="huge num' + (safe.perDay < 0 ? " neg" : "") + '" data-count="' + perDay.toFixed(0) + '">' + gbp(perDay) + '</span>'
         + '<p class="subl">' + (safe.left >= 0 ? gbp(safe.left) + ' left in ' + (who ? 'your and joint budgets' : 'your budgets') + ' this month' + (both ? '. Together it’s ' + gbp(Math.max(0, both.perDay)) + ' a day.' : '.') : 'Budgets are ' + gbp(-safe.left) + ' over for this month.') + '</p>'
@@ -587,7 +584,7 @@ function vHome() {
   const chipCol = ["#d9f15a", "#f6a9cf", "#8f9bf5", "#f2652f"];
   h += '<div class="section-head"><h2>Challenges</h2></div><div class="challenge-row">' + act.map((s, i) => {
     const x = s.x, st2 = s.state === "won" ? "Done!" : s.state === "lost" ? "Missed" : s.state === "soon" ? "Starts " + dayLabel(s.start) : plural(s.daysLeft, "day") + " left";
-    return '<button class="chip-c" data-act="editchal" data-id="' + esc(x.id) + '">' + chipDisc(chipCol[i % 4], x.emoji, s.state) + '<b>' + esc(x.name) + '</b><span class="note">' + esc(st2) + (x.kind === "under" ? ", " + gbp(s.spent) + " of " + gbp(s.limit) : s.spent > 0 ? ", " + gbp(s.spent) + " spent" : "") + '</span></button>';
+    return '<button class="chip-c" data-act="editchal" data-id="' + esc(x.id) + '">' + token(chipCol[i % 4], x.emoji, s.state, x.id) + '<b>' + esc(x.name) + '</b><span class="note">' + esc(st2) + (x.kind === "under" ? ", " + gbp(s.spent) + " of " + gbp(s.limit) : s.spent > 0 ? ", " + gbp(s.spent) + " spent" : "") + '</span></button>';
   }).join("") + '<button class="chip-c add" data-act="newchal"><span style="font-size:30px">+</span><b>New challenge</b><span class="note">No takeaway week, £50 food shop…</span></button></div>';
   // budgets
   h += '<div class="section-head"><h2>Budgets</h2><a class="btn small" href="#plan/budgets">Edit</a></div>';
@@ -1357,7 +1354,7 @@ function route() {
   ui.route = ["home", "spend", "flow", "plan", "insights", "statement", "settings", "import"].includes(h[0]) ? h[0] : (h[0] === "statements" ? "insights" : "home");
   ui.sub = h[0] === "statements" ? "statements" : (h[1] || "");
   ui.animate = true;
-  closeSheet(); window.scrollTo(0, 0); render();
+  transition(() => { closeSheet(); window.scrollTo(0, 0); if (rq) { cancelAnimationFrame(rq); rq = 0; } draw(); });
 }
 window.addEventListener("hashchange", route);
 
@@ -1365,6 +1362,7 @@ window.addEventListener("hashchange", route);
 (async function boot() {
   const h = (location.hash || "#home").slice(1).split("/"); ui.route = h[0] || "home"; ui.sub = h[1] || "";
   if (ui.route === "statements") { ui.route = "insights"; ui.sub = "statements"; }
+  backdrop();
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => { });
   if (S.mode === "demo") { DB = memoryDB(); startWatching(); render(); return; }
   try { DB = await firebaseDB(); } catch (e) { console.error(e); $("#app").innerHTML = '<div class="boot">Couldn’t load. Check your internet connection and refresh.</div>'; return; }
