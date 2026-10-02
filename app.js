@@ -50,7 +50,16 @@ const ICON = {
   back: '<path d="M15 5l-7 7 7 7"/>'
 };
 const svg = (k, size) => '<svg viewBox="0 0 24 24" width="' + (size || 22) + '" height="' + (size || 22) + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
-const MARK = '<svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="11" fill="var(--brand)"/><circle cx="16" cy="20" r="8.5" fill="none" stroke="var(--m)" stroke-width="3.2"/><circle cx="24" cy="20" r="8.5" fill="none" stroke="var(--s)" stroke-width="3.2"/></svg>';
+const MARK = '<svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="12" fill="var(--lime)"/><circle cx="15.5" cy="20" r="9" fill="var(--peri)"/><circle cx="24.5" cy="20" r="9" fill="var(--pink)" style="mix-blend-mode:multiply"/><circle cx="15.5" cy="20" r="9" fill="none" stroke="#15162b" stroke-width="2.4"/><circle cx="24.5" cy="20" r="9" fill="none" stroke="#15162b" stroke-width="2.4"/></svg>';
+function burst(big, small, fill, ink) {
+  const n = 14, cx = 52, cy = 52, pts = [];
+  for (let i = 0; i < n * 2; i++) { const a = Math.PI * i / n - Math.PI / 2, r = i % 2 ? 41 : 51; pts.push((cx + r * Math.cos(a)).toFixed(1) + "," + (cy + r * Math.sin(a)).toFixed(1)); }
+  return '<svg class="burst" viewBox="0 0 104 104" aria-hidden="true"><polygon points="' + pts.join(" ") + '" fill="' + fill + '"/><text x="52" y="' + (small ? 54 : 61) + '" text-anchor="middle" font-size="' + (String(big).length > 4 ? 24 : 32) + '" fill="' + ink + '">' + esc(big) + '</text>' + (small ? '<text x="52" y="71" text-anchor="middle" font-size="12" fill="' + ink + '" font-family="Instrument Sans, sans-serif" font-weight="600">' + esc(small) + '</text>' : "") + '</svg>';
+}
+const SQUIG = '<svg class="squig" viewBox="0 0 170 70" aria-hidden="true"><path d="M4 52 C 22 8, 46 8, 56 40 S 86 70, 100 36 S 132 2, 150 28 S 164 58, 167 44" fill="none" stroke="#f2652f" stroke-width="4" stroke-linecap="round"/><path d="M14 62 C 40 40, 64 66, 90 52" fill="none" stroke="#2b2f73" stroke-width="3" stroke-linecap="round"/></svg>';
+function chipDisc(color, emoji, state) {
+  return '<svg class="disc" viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="38" fill="' + color + '"/><circle cx="40" cy="40" r="30.5" fill="none" stroke="#15162b" stroke-width="7" stroke-dasharray="9 7"/><circle cx="40" cy="40" r="22" fill="#fbf6ee"/><text x="40" y="48" text-anchor="middle" font-size="22">' + esc(emoji || "\uD83C\uDFAF") + '</text>' + (state === "won" ? '<circle cx="64" cy="16" r="12" fill="#7bd88f" stroke="#15162b" stroke-width="2.5"/><path d="M58 16l4 4 8-8" fill="none" stroke="#15162b" stroke-width="3" stroke-linecap="round"/>' : "") + '</svg>';
+}
 
 /* ================= state ================= */
 const S = {
@@ -495,11 +504,11 @@ function shell(body) {
   const links = () => nav.map(n => '<a class="navbtn' + (cur === n[0] ? " on" : "") + '" href="#' + n[0] + '">' + svg(n[2]) + n[1] + '</a>').join("");
   const brand = '<a class="brand" href="#home">' + MARK + '<span><b>' + esc(nm("m")) + ' &amp; ' + esc(nm("s")) + '</b><small>Household money</small></span></a>';
   return '<div class="shell"><aside class="side">' + brand + links() + '<span class="grow"></span><a class="navbtn' + (cur === "settings" ? " on" : "") + '" href="#settings">' + svg("gear") + 'Settings</a></aside>'
-    + '<main class="main"><header class="top">' + brand + '<span class="grow"></span><a class="btn small ghost" href="#settings" aria-label="Settings">' + svg("gear", 18) + '<span class="hide-s">Settings</span></a></header>'
+    + '<main class="main"><header class="top">' + brand + '<span class="grow"></span><a class="roundbtn" href="#settings" aria-label="Settings">' + svg("gear", 20) + '</a></header>'
     + (S.mode === "demo" ? '<div class="banner info noprint" style="margin-bottom:14px">Sample numbers only. Nothing here is real or shared.</div>' : "")
     + body + '</main></div>'
     + '<nav class="bottom"><div class="in">' + links() + '</div></nav>'
-    + (["home", "spend"].includes(ui.route) ? '<button class="fab" data-act="addexp">' + svg("plus") + 'Add spending</button>' : "");
+    + (["home", "spend"].includes(ui.route) ? '<button class="fab" data-act="addexp" aria-label="Add spending">' + svg("plus") + 'Add spending</button>' : "");
 }
 
 /* ---- login / welcome ---- */
@@ -527,13 +536,13 @@ function ring(opts) {
   let off = 0, arcs = "";
   (opts.segs || []).forEach(sg => {
     const f = Math.max(0, Math.min(1 - off, sg.f || 0)); if (f <= 0) return;
-    arcs += '<circle class="ring-arc" cx="56" cy="56" r="' + R + '" fill="none" stroke="' + (opts.over ? "var(--bad)" : sg.c) + '" stroke-width="12" stroke-dasharray="' + (f * C).toFixed(2) + ' ' + C.toFixed(2) + '" stroke-dashoffset="' + (-off * C).toFixed(2) + '" transform="rotate(-90 56 56)"/>';
+    arcs += '<circle class="ring-arc" cx="56" cy="56" r="' + R + '" fill="none" stroke="' + (opts.over ? "var(--bad)" : sg.c) + '" stroke-width="14" stroke-dasharray="' + (f * C).toFixed(2) + ' ' + C.toFixed(2) + '" stroke-dashoffset="' + (-off * C).toFixed(2) + '" transform="rotate(-90 56 56)"/>';
     off += f;
   });
   const hasE = !!opts.emoji;
-  return '<svg viewBox="0 0 112 112" role="img" aria-label="' + esc(opts.label || "") + '"><circle cx="56" cy="56" r="' + R + '" fill="none" stroke="var(--surface2)" stroke-width="12"/>' + arcs
+  return '<svg viewBox="0 0 112 112" role="img" aria-label="' + esc(opts.label || "") + '"><circle cx="56" cy="56" r="' + R + '" fill="none" stroke="url(#hatch)" stroke-width="14"/>' + arcs
     + (hasE ? '<text x="56" y="44" text-anchor="middle" font-size="18">' + esc(opts.emoji) + '</text>' : "")
-    + '<text x="56" y="' + (hasE ? 66 : (opts.sub ? 56 : 62)) + '" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="700" font-size="' + (hasE ? 17 : 19) + '" fill="var(--ink)">' + esc(opts.centre) + '</text>'
+    + '<text x="56" y="' + (hasE ? 66 : (opts.sub ? 56 : 62)) + '" text-anchor="middle" font-family="Big Shoulders Display, Impact, sans-serif" font-weight="900" font-size="' + (hasE ? 21 : 24) + '" fill="var(--ink)">' + esc(opts.centre) + '</text>'
     + (opts.sub ? '<text x="56" y="' + (hasE ? 80 : 73) + '" text-anchor="middle" font-size="11" fill="var(--muted)">' + esc(opts.sub) + '</text>' : "") + '</svg>';
 }
 function jointSegs(frac, item) {
@@ -545,52 +554,49 @@ function jointSegs(frac, item) {
 /* ---- home ---- */
 function vHome() {
   const c = columns(), ym = thisYM(), who = me(), hr = new Date().getHours();
-  const greet = (hr < 12 ? "Morning" : hr < 18 ? "Afternoon" : "Evening") + (who ? ", " + nm(who) : "");
+  const hi = (hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening") + ", " + new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const safe = safeToSpend(who), both = who ? safeToSpend(null) : null, streak = loggingStreak();
-  let h = '<div class="stack">';
-  if (S.mode === "live" && !who) h += '<section class="card"><h3>Which one are you?</h3><p class="sub">So the site greets you and fills in who paid.</p><div class="row wrap">' + PEOPLE.map(p => '<button class="btn" data-act="iam" data-v="' + p + '"><span class="dot ' + p + '"></span>' + esc(nm(p)) + '</button>').join("") + '</div></section>';
-  if (S.mode === "demo" && !who) h += '<section class="card"><h3>Whose phone is this?</h3><div class="row wrap">' + PEOPLE.map(p => '<button class="btn" data-act="iam" data-v="' + p + '"><span class="dot ' + p + '"></span>' + esc(nm(p)) + '</button>').join("") + '</div></section>';
-  // recap banner
+  let h = '<div class="hello"><div><span class="hello-k">' + esc(hi) + '</span><h1 class="hello-name">Hello <b>' + esc(who ? nm(who) : nm("m") + " & " + nm("s")) + '</b>!</h1></div></div>';
+  if (!who) h += '<section class="card" style="margin-bottom:12px"><h3>Which one are you?</h3><p class="sub">So it greets you and fills in who paid.</p><div class="row wrap">' + PEOPLE.map(p => '<button class="btn" data-act="iam" data-v="' + p + '"><span class="dot ' + p + '"></span>' + esc(nm(p)) + '</button>').join("") + '</div></section>';
   const last = S.statements[0];
-  if (last && LS.get("ms-recap-seen") !== last.id) h += '<button class="recapbar" data-act="recap" data-v="' + esc(last.id) + '"><span class="play">▶</span><span class="grow"><b>Your ' + esc(ymLabel(last.id).split(" ")[0]) + ' recap is ready</b><br><span class="note">Tap to see how the month went</span></span></button>';
+  if (last && LS.get("ms-recap-seen") !== last.id) h += '<button class="recapbar" data-act="recap" data-v="' + esc(last.id) + '"><span class="play">▶</span><span class="grow"><b>Your ' + esc(ymLabel(last.id).split(" ")[0]) + ' recap is ready</b><br><span style="opacity:.75">Tap to see how the month went</span></span></button>';
+  h += '<div class="bento">';
   // hero
-  const perDay = safe.perDay;
-  h += '<section class="hero"><svg class="deco" viewBox="0 0 40 40"><circle cx="16" cy="20" r="12" fill="none" stroke="var(--m)" stroke-width="3"/><circle cx="24" cy="20" r="12" fill="none" stroke="var(--s)" stroke-width="3"/></svg>'
-    + '<span class="hello">' + esc(greet) + '</span>'
-    + (S.budgets.length ? '<span class="lab">Safe to spend today</span><span class="bignum num' + (perDay < 0 ? " neg" : "") + '" data-count="' + Math.max(0, perDay).toFixed(0) + '">' + gbp(Math.max(0, perDay)) + '</span>'
-      + '<span class="subl">' + (safe.left >= 0 ? gbp(safe.left) + ' left in ' + (who ? 'your and joint budgets' : 'your budgets') + ' for ' + plural(safe.daysLeft, "day") : 'Budgets are ' + gbp(-safe.left) + ' over for this month') + (both ? '. Together: ' + gbp(Math.max(0, both.perDay)) + ' a day.' : '.') + '</span>'
-      : '<span class="lab">Add a budget in Plan to see what’s safe to spend each day.</span>')
-    + '<div class="chipsrow">' + (streak ? '<span class="hchip">🔥 ' + plural(streak, "day") + ' logging streak</span>' : '<span class="hchip">Log a purchase to start a streak</span>') + '<a class="hchip" href="#flow">' + esc(nextMoveText(ym)) + '</a></div></section>';
-  // challenges
-  const act = S.challenges.map(x => Object.assign({ x }, challengeStatus(x))).filter(s => s.state === "on" || s.state === "soon" || (s.end >= addD(todayISO(), -3)));
-  h += '<div class="section-head"><h2>Challenges</h2><button class="btn small ghost" data-act="newchal">+ New</button></div>';
-  h += act.length ? '<section class="card">' + act.map(s => {
-    const x = s.x, frac = s.state === "soon" ? 0 : Math.min(1, s.dayNo / (+x.days || 7));
-    const pill = s.state === "won" ? '<span class="pill good">✓ Done</span>' : s.state === "lost" ? '<span class="pill bad">Missed</span>' : s.state === "soon" ? '<span class="pill plain">Starts ' + esc(dayLabel(s.start)) + '</span>' : '<span class="pill plain">' + plural(s.daysLeft, "day") + ' left</span>';
-    const detail = x.kind === "nospend" ? (s.spent > 0 ? gbp(s.spent, 1) + " spent" : "Nothing spent yet") : gbp(s.spent, 1) + " of " + gbp(s.limit) + " used";
-    return '<div class="chal" data-act="editchal" data-id="' + esc(x.id) + '" style="cursor:pointer"><span class="emo">' + esc(x.emoji || "🎯") + '</span><div class="grow"><div class="row between"><b>' + esc(x.name) + '</b>' + pill + '</div><div class="bar" style="margin:6px 0"><i style="width:' + (frac * 100).toFixed(0) + '%;background:' + (s.state === "lost" ? "var(--bad)" : "var(--good)") + '"></i></div><span class="note">' + esc(detail) + '</span></div></div>';
-  }).join('<div class="hr"></div>') + '</section>' : '<div class="empty">Try a challenge like <b>No takeaway week</b>. <button class="btn small" data-act="newchal">Start one</button></div>';
-  // people table
-  const cell = (v, cls) => '<div class="v ' + (cls || "") + '">' + v + '</div>';
-  const utilCell = k => { const x = c[k]; if (!(x.income > 0)) return '<div class="v muted">Not set</div>'; const u = x.util, col = u > 1 ? "var(--bad)" : u > .9 ? "var(--warn)" : "var(--" + k + ")"; return '<div class="v util"><span>' + Math.round(u * 100) + '% used</span><div class="bar"><i style="width:' + Math.min(100, u * 100).toFixed(1) + '%;background:' + col + '"></i></div><span class="note">' + (x.left >= 0 ? gbp(x.left) + " left" : gbp(-x.left) + " short") + '</span></div>'; };
-  h += '<section class="card"><div class="row between wrap"><h2>Where we stand</h2><span class="note">Monthly, after tax</span></div><div class="ptable">'
-    + '<div class="h"></div>' + ["s", "m", "j"].map(k => '<div class="h v"><span class="dot ' + k + '"></span>' + esc(nm(k)) + '</div>').join("")
-    + '<div class="lab">Income</div>' + ["s", "m", "j"].map(k => cell('<span data-count="' + c[k].income.toFixed(0) + '">' + gbp(c[k].income) + '</span>', "big num")).join("")
-    + '<div class="lab">Money utilisation</div>' + ["s", "m", "j"].map(utilCell).join("")
-    + '<div class="lab">House bills</div>' + ["s", "m", "j"].map(k => cell(gbp(c[k].bills), "num")).join("")
-    + '<div class="lab">Subscriptions</div>' + ["s", "m", "j"].map(k => cell(gbp(c[k].subs), "num")).join("")
-    + '</div><p class="note">Joint income is what you both move into the joint account. Together you take home <b>' + gbp(c.m.income + c.s.income) + '</b> a month.</p></section>';
+  const perDay = Math.max(0, safe.perDay);
+  h += '<section class="tile t-lime b-hero">' + burst(String(safe.daysLeft), safe.daysLeft === 1 ? "day left" : "days left", "#15162b", "#d9f15a") + SQUIG
+    + (S.budgets.length
+      ? '<span class="k">Safe to spend today</span><span class="huge num' + (safe.perDay < 0 ? " neg" : "") + '" data-count="' + perDay.toFixed(0) + '">' + gbp(perDay) + '</span>'
+        + '<p class="subl">' + (safe.left >= 0 ? gbp(safe.left) + ' left in ' + (who ? 'your and joint budgets' : 'your budgets') + ' this month' + (both ? '. Together it’s ' + gbp(Math.max(0, both.perDay)) + ' a day.' : '.') : 'Budgets are ' + gbp(-safe.left) + ' over for this month.') + '</p>'
+      : '<span class="k">Safe to spend today</span><span class="huge">£?</span><p class="subl">Add your budgets in Plan and this shows what you can spend each day.</p>')
+    + '<div class="hchips">' + (streak ? '<span class="hchip">🔥 ' + plural(streak, "day") + ' streak</span>' : '<span class="hchip">✏️ Log a purchase to start a streak</span>') + '<a class="hchip" href="#flow">' + esc(nextMoveText(ym)) + '</a></div></section>';
+  // spend tile
+  const months = [5, 4, 3, 2, 1, 0].map(i => addM(ym, -i)), vals = months.map(m => sum(expensesOf(m).map(e => e.amount))), mx = Math.max(1, ...vals);
+  const day = new Date().getDate(), lastSame = sum(expensesOf(addM(ym, -1)).filter(e => +e.date.slice(8, 10) <= day).map(e => e.amount)), cur = vals[5];
+  h += '<section class="tile t-ink b-spend"><div class="spendhead"><div><span class="k" style="opacity:1;color:var(--muted)">Spent in ' + esc(ymLabel(ym).split(" ")[0]) + '</span><div class="spendbig num" data-count="' + cur.toFixed(0) + '">' + gbp(cur) + '</div></div>'
+    + (lastSame > 0 ? '<span class="pill ' + (cur <= lastSame ? "good" : "warn") + '">' + (cur <= lastSame ? "↓ " + gbp(lastSame - cur) + " less" : "↑ " + gbp(cur - lastSame) + " more") + ' than this time last month</span>' : '<a class="btn small" href="#spend">See purchases</a>') + '</div>'
+    + '<div class="mbars">' + months.map((m, i) => '<div class="col' + (i === 5 ? " cur" : "") + '" title="' + esc(ymLabel(m)) + ': ' + gbp(vals[i]) + '">' + (i === 5 && cur > 0 ? '<span class="note num" style="color:var(--lime);font-weight:700">' + gbp(cur) + '</span>' : '') + '<div class="b" style="height:' + Math.max(3, vals[i] / mx * 100).toFixed(1) + '%;background:' + (i === 5 ? "var(--lime)" : "repeating-linear-gradient(135deg,var(--surface2) 0 6px,var(--line2) 6px 9px)") + '"></div><span class="lb">' + esc(ymLabel(m, true).split(" ")[0]) + '</span></div>').join("") + '</div></section>';
+  // people
+  const ptile = k => { const x = c[k], name = k === "j" ? "Joint" : nm(k), ini = k === "j" ? "&" : name.charAt(0);
+    return '<div class="ptile ' + k + '"><div class="row between"><span class="av">' + esc(ini) + '</span><span class="tiny num">' + (x.income > 0 ? Math.round(x.util * 100) + "% used" : "") + '</span></div><span class="nm">' + esc(name) + '</span><span class="left num">' + (x.income > 0 ? gbp(Math.abs(x.left)) : "£0") + '</span><span class="tiny">' + (x.income > 0 ? (x.left < 0 ? "short" : "left") + " of " + gbp(x.income) : (k === "j" ? "Nothing moved in yet" : "Add income in Plan")) + '</span><div class="bar"><i style="width:' + Math.min(100, x.util * 100).toFixed(0) + '%"></i></div><span class="tiny">Bills ' + gbp(x.bills) + ', subs ' + gbp(x.subs) + '</span></div>'; };
+  h += '<section class="b-people"><div class="people">' + ptile("s") + ptile("m") + ptile("j") + '</div></section>';
+  h += '</div>';
   const al = alerts(c);
-  if (al.length) h += '<section class="card"><h3>Worth a look</h3><ul class="alerts">' + al.map(a => '<li><span class="ic pill ' + a[0] + '" style="padding:0">' + a[1] + '</span><span>' + a[2] + '</span></li>').join("") + '</ul></section>';
+  if (al.length) h += '<div class="section-head"><h2>Worth a look</h2></div><section class="card"><ul class="alerts">' + al.map(a => '<li><span class="ic pill ' + a[0] + '" style="padding:0">' + a[1] + '</span><span>' + a[2] + '</span></li>').join("") + '</ul></section>';
+  // challenges as chips
+  const act = S.challenges.map(x => Object.assign({ x }, challengeStatus(x))).filter(s => s.state === "on" || s.state === "soon" || (s.end >= addD(todayISO(), -3)));
+  const chipCol = ["#d9f15a", "#f6a9cf", "#8f9bf5", "#f2652f"];
+  h += '<div class="section-head"><h2>Challenges</h2></div><div class="challenge-row">' + act.map((s, i) => {
+    const x = s.x, st2 = s.state === "won" ? "Done!" : s.state === "lost" ? "Missed" : s.state === "soon" ? "Starts " + dayLabel(s.start) : plural(s.daysLeft, "day") + " left";
+    return '<button class="chip-c" data-act="editchal" data-id="' + esc(x.id) + '">' + chipDisc(chipCol[i % 4], x.emoji, s.state) + '<b>' + esc(x.name) + '</b><span class="note">' + esc(st2) + (x.kind === "under" ? ", " + gbp(s.spent) + " of " + gbp(s.limit) : s.spent > 0 ? ", " + gbp(s.spent) + " spent" : "") + '</span></button>';
+  }).join("") + '<button class="chip-c add" data-act="newchal"><span style="font-size:30px">+</span><b>New challenge</b><span class="note">No takeaway week, £50 food shop…</span></button></div>';
   // budgets
-  h += '<div class="section-head"><h2>Budgets</h2><a class="btn small ghost" href="#plan/budgets">Edit</a></div>';
+  h += '<div class="section-head"><h2>Budgets</h2><a class="btn small" href="#plan/budgets">Edit</a></div>';
   h += S.budgets.length ? '<div class="rings">' + S.budgets.map(b => {
     const sp = budgetSpent(b, ym), a = +b.amount || 0, over = sp > a && a > 0;
     return '<div class="ring" data-act="openbudget" data-id="' + esc(b.id) + '">' + ring({ segs: [{ f: a ? sp / a : 0, c: itemColor(b) }], over, emoji: b.emoji, centre: over ? gbp(sp - a) : gbp(Math.max(0, a - sp)), sub: over ? "over" : "left", label: b.name })
       + '<div class="t">' + esc(b.name) + '</div>' + whoTag(b.who) + '<div class="k num">' + gbp(sp) + ' of ' + gbp(a) + ' spent</div></div>';
   }).join("") + '</div>' : '<div class="empty">No budgets yet. <a href="#plan/budgets">Add one</a></div>';
-  // debt
-  h += '<div class="section-head"><h2>Debt</h2><a class="btn small ghost" href="#plan/debts">Edit</a></div>';
+  h += '<div class="section-head"><h2>Debt</h2><a class="btn small" href="#plan/debts">Edit</a></div>';
   const ds = S.debts.slice().sort((a, b) => (+b.apr || 0) - (+a.apr || 0));
   h += ds.length ? '<div class="rings">' + ds.map(d => {
     const inf = debtInfo(d);
@@ -598,15 +604,14 @@ function vHome() {
       + '<div class="t">' + esc(d.name) + '</div>' + whoTag(d.who)
       + '<div class="facts"><span>Months left</span><span>' + (inf.plan.done ? "Paid off" : inf.plan.months != null ? inf.plan.months : "Not set") + '</span><span>Finished</span><span>' + (inf.plan.done ? "Done" : inf.finishISO ? dateLabel(inf.finishISO) : "Not set") + '</span><span>Interest paid</span><span>' + gbp(+d.interestPaid || 0, 1) + '</span></div>' + (d.inr ? inrOf(+d.balance || 0) : "") + '</div>';
   }).join("") + '</div>' : '<div class="empty">No debts. Nice.</div>';
-  // pots
-  h += '<div class="section-head"><h2>Saving goals</h2><a class="btn small ghost" href="#plan/pots">Edit</a></div>';
+  h += '<div class="section-head"><h2>Saving goals</h2><a class="btn small" href="#plan/pots">Edit</a></div>';
   h += S.pots.length ? '<div class="rings">' + S.pots.map(p => {
     const inf = potInfo(p);
     return '<div class="ring" data-act="edit" data-c="pots" data-id="' + esc(p.id) + '">' + ring({ segs: jointSegs(inf.pct, p), emoji: p.emoji, centre: gbp(inf.cur), sub: inf.goal ? "of " + gbp(inf.goal) : "saved", label: p.name })
       + '<div class="t">' + esc(p.name) + '</div>' + whoTag(p.who)
       + '<div class="k">' + (inf.goal <= 0 ? "Set a goal" : inf.remaining <= 0 ? "Reached 🎉" : inf.iso ? "Complete " + dateLabel(inf.iso) : "Set a monthly amount") + '</div>' + (p.inr ? inrOf(inf.cur) : "") + '</div>';
   }).join("") + '</div>' : '<div class="empty">No saving goals yet. <a href="#plan/pots">Add one</a></div>';
-  return h + '</div>';
+  return h;
 }
 function nextMoveText(ym) {
   const today = new Date().getDate(), who = me();
