@@ -2,6 +2,7 @@ import { firebaseConfig } from "./config.js";
 import { demoData } from "./demo.js";
 import { pebble, mark, contours, smoothPath, scan, transition, backdrop, blobD, hash } from "./organic.js";
 import { mountChrome, tilt } from "./chrome.js";
+import { World } from "./world.js";
 
 /* ================= helpers ================= */
 const $ = s => document.querySelector(s);
@@ -493,9 +494,17 @@ function applyTheme() {
   if (t === "night") t = "chrome";
   if (t === "auto") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "chrome" : "paper";
   document.documentElement.dataset.theme = t;
+  const want = LS.get("ms-world") !== "off";
+  if (want && World.init()) { document.body.classList.add("world"); World.setLook({ ascii: LS.get("ms-ascii") === "on", light: t === "paper" }); }
+  else document.body.classList.remove("world");
   const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = t === "chrome" ? "#050507" : "#f3f0e9";
 }
 applyTheme();
+World.onPick(h => {
+  if (h.type === "item") openItem(h.c, h.id);
+  else if (h.type === "expense") openExpense(h.id);
+  else if (h.type === "account") { const el = document.querySelector(".acct." + h.who); if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.animate([{ boxShadow: "0 0 0 0 rgba(169,149,255,0)" }, { boxShadow: "0 0 0 3px rgba(169,149,255,.7)" }, { boxShadow: "0 0 0 0 rgba(169,149,255,0)" }], { duration: 1400 }); } }
+});
 if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
 
 /* ================= pop out for numbers still to set ================= */
@@ -598,7 +607,10 @@ function draw() {
   app.querySelectorAll(".tile,.ptile,.ring,.chip-c,.up,.recapbar").forEach(el => el.classList.add("tilt"));
   tilt(app);
   const hero = app.querySelector(".b-hero");
-  if (hero && document.documentElement.dataset.theme === "chrome") { if (mountChrome(hero, ui.hero)) hero.classList.add("has3d"); }
+  // tables become labelled cards on small screens
+  app.querySelectorAll("table").forEach(tb => { const hs = Array.from(tb.querySelectorAll("thead th")).map(th => th.textContent.trim()); tb.querySelectorAll("tbody tr, tfoot tr").forEach(tr => Array.from(tr.children).forEach((td, i) => { if (hs[i] && !td.dataset.label) td.dataset.label = hs[i]; })); });
+  if (worldOn()) { syncWorld(); World.go(STATION[ui.route] || "home"); scramble(app); }
+  else if (hero && document.documentElement.dataset.theme === "chrome") { if (mountChrome(hero, ui.hero)) hero.classList.add("has3d"); }
   if (ui.animate) { countUp(); setTimeout(() => app.classList.remove("anim"), 1100); }
   ui.animate = false;
   if (ui.keepScroll) window.scrollTo(0, y);
@@ -620,11 +632,101 @@ function placeNav() {
   });
 }
 window.addEventListener("resize", () => { navPos = null; placeNav(); });
+/* ================= the 3D world, its stage and the dial ================= */
+const STATION = { home: "home", spend: "spend", import: "spend", flow: "flow", plan: "plan", insights: "insights", statement: "insights", settings: "home" };
+const ITEMCOL = { bills: "#7fd8ff", subs: "#a995ff", debts: "#ff7a8a", budgets: "#ffd36b", pots: "#6dffc4", yearly: "#ffb38a" };
+const worldOn = () => !!World.ok && document.body.classList.contains("world");
+function worldData() {
+  const who = me(), safe = safeToSpend(who), c = columns(), sh = jointShares(), ym = thisYM();
+  const out = k => { const t = totalsFor(k); return t.bills + t.subs + t.debts + t.pots + t.yearly; };
+  const items = [];
+  [["bills", "cost"], ["subs", "cost"], ["debts", "balance"], ["budgets", "amount"], ["pots", "goal"], ["yearly", "amount"]].forEach(([k, f]) => S[k].forEach(x => items.push({ c: k, id: x.id, amount: +x[f] || +x.current || +x.monthly || 1, color: ITEMCOL[k] })));
+  return {
+    fill: safe.total > 0 ? Math.max(0, safe.left) / safe.total : .5, warm: safe.total > 0 && safe.left < 0,
+    pots: S.pots.map(p => ({ id: p.id, pct: potInfo(p).pct, color: p.who === "m" ? "#7fd8ff" : p.who === "s" ? "#ff86dc" : "#6dffc4" })),
+    expenses: S.expenses.filter(e => e.ym >= addM(ym, -2)).map(e => ({ id: e.id, amount: +e.amount || 0, who: e.who, age: Math.max(0, dDiff(e.date, todayISO())) })).sort((a, b) => a.age - b.age),
+    flow: { m2j: sh.m, s2j: sh.s, mOut: out("m"), sOut: out("s"), jOut: c.j.committed },
+    items, debt: forecastDebt(null, 24), potsSeries: forecastPots(null, 24)
+  };
+}
+let worldKey = "";
+function syncWorld() {
+  if (!World.ok) return;
+  const d = worldData(), k = JSON.stringify(d);
+  if (k !== worldKey) { worldKey = k; World.update(d); }
+}
+function stageHTML() {
+  const r = ui.route, ym = thisYM(), mon = ymLabel(ym).split(" ")[0];
+  const t = (k, title, extra) => '<section class="stage st-' + r + '" aria-label="' + esc(title) + '"><div class="stage-in"><span class="mono">' + k + '</span><h1 class="stage-title scramble">' + esc(title) + '</h1>' + (extra || "") + '</div><span class="stage-hint mono">' + (r === "home" ? "Drag to spin, tap to ripple" : r === "spend" ? "Each bead is a purchase. Tap one" : r === "plan" ? "Each crystal is an item. Tap one" : r === "flow" ? "Money flowing between your accounts" : "") + '</span></section>';
+  if (r === "spend") { const tot = sum(expensesOf(ui.spendYM).map(e => e.amount)); return t("01 / Spending", "Spending", '<div class="stage-num num">' + gbp(tot) + '</div><span class="mono dim">spent in ' + esc(ymLabel(ui.spendYM)) + '</span>'); }
+  if (r === "flow") { const c = columns(), sh = jointShares(); return t("02 / Cash flow", "Cash flow", '<span class="mono dim">' + esc(ymLabel(ui.flowYM)) + '</span>')
+      + '<span class="wlabel" data-anchor="m"><b>' + esc(nm("m")) + '</b>' + gbp(takeHome("m")) + ' in</span><span class="wlabel" data-anchor="s"><b>' + esc(nm("s")) + '</b>' + gbp(takeHome("s")) + ' in</span><span class="wlabel" data-anchor="j"><b>Joint</b>' + gbp(sh.m + sh.s) + ' moved in</span><span class="wlabel dim" data-anchor="out"><b>Out</b>bills, debts, savings</span>'; }
+  if (r === "plan") { const n = S.bills.length + S.subs.length + S.debts.length + S.budgets.length + S.pots.length + S.yearly.length; return t("03 / Plan", "Plan", '<span class="mono dim">' + plural(n, "item") + ' in your plan</span>'); }
+  if (r === "insights" || r === "statement") { const d = forecastDebt(null, 24), p = forecastPots(null, 24); return t("04 / Insights", r === "statement" ? "Statement" : "Insights", '<span class="mono dim">Two years from now</span>')
+      + '<span class="wlabel" data-anchor="debtEnd" style="--c:var(--bad)"><b>Debt</b>' + gbp(d[24] || 0) + '</span><span class="wlabel" data-anchor="potsEnd" style="--c:var(--good)"><b>Saved</b>' + gbp(p[24] || 0) + '</span><span class="wlabel dim" data-anchor="now"><b>Now</b></span>'; }
+  if (r === "settings") return t("05 / Settings", "Settings");
+  if (r === "import") return t("01 / Spending", "Import");
+  if (r === "home") return ui.homeStage || "";
+  return "";
+}
+const DIAL = [["home", "Home"], ["spend", "Spending"], ["flow", "Cash flow"], ["plan", "Plan"], ["insights", "Insights"], ["settings", "Settings"]];
+const DIAL_STEP = 34;
+function dialIndex() { const r = ui.route === "statement" ? "insights" : ui.route === "import" ? "spend" : ui.route; return Math.max(0, DIAL.findIndex(d => d[0] === r)); }
+function dialHTML() {
+  const idx = dialIndex(); let ticks = "";
+  for (let i = 0; i < 180; i++) { const a = i * 2, major = i % 17 === 0; ticks += '<line x1="0" y1="' + (major ? -192 : -188) + '" x2="0" y2="-179" transform="rotate(' + a + ')" class="' + (major ? "mj" : "") + '"/>'; }
+  return '<nav class="dial" aria-label="Sections"><div class="dial-disc"><div class="dial-spec"></div><div class="dial-rot" style="--rot:' + (-idx * DIAL_STEP) + 'deg"><svg viewBox="-200 -200 400 400" aria-hidden="true"><g class="ticks">' + ticks + '</g><circle r="172" class="ring"/></svg>'
+    + DIAL.map((d, i) => '<a class="dl' + (i === idx ? " on" : "") + '" href="#' + d[0] + '" style="--a:' + (i * DIAL_STEP) + 'deg" data-i="' + i + '">' + esc(d[1]) + '</a>').join("") + '</div>'
+    + '<span class="dial-pin" aria-hidden="true"></span><button class="dial-add" data-act="addexp" aria-label="Add spending">' + svg("plus") + '</button></div></nav>';
+}
+/* drag the dial round to change section */
+let dialDrag = null;
+document.addEventListener("pointerdown", e => {
+  const d = e.target.closest(".dial-disc"); if (!d || e.target.closest(".dial-add")) return;
+  const r = d.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  dialDrag = { cx, cy, a0: Math.atan2(e.clientX - cx, cy - e.clientY), base: -dialIndex() * DIAL_STEP, rot: d.querySelector(".dial-rot"), moved: false, x0: e.clientX };
+});
+document.addEventListener("pointermove", e => {
+  if (!dialDrag) return; const a = Math.atan2(e.clientX - dialDrag.cx, dialDrag.cy - e.clientY), da = (a - dialDrag.a0) * 180 / Math.PI;
+  if (Math.abs(e.clientX - dialDrag.x0) > 6) dialDrag.moved = true; if (!dialDrag.moved) return;
+  const r = Math.max(-(DIAL.length - 1) * DIAL_STEP - 10, Math.min(10, dialDrag.base + da));
+  dialDrag.rot.style.transition = "none"; dialDrag.rot.style.setProperty("--rot", r + "deg"); dialDrag.cur = r;
+});
+document.addEventListener("pointerup", () => {
+  if (!dialDrag) return; const d = dialDrag; dialDrag = null; d.rot.style.transition = "";
+  if (!d.moved) return; justDragged = Date.now();
+  const i = Math.max(0, Math.min(DIAL.length - 1, Math.round(-d.cur / DIAL_STEP)));
+  d.rot.style.setProperty("--rot", (-i * DIAL_STEP) + "deg");
+  if (DIAL[i][0] !== (ui.route === "statement" ? "insights" : ui.route)) location.hash = "#" + DIAL[i][0];
+});
+/* the dial tucks away while you scroll down and comes back when you scroll up */
+let lastSY = 0;
+window.addEventListener("scroll", () => {
+  const y = scrollY, d = document.querySelector(".dial"); if (!d) return;
+  const atEnd = innerHeight + y >= document.documentElement.scrollHeight - 40;
+  if (y > lastSY + 6 && y > 200 && !atEnd) d.classList.add("tucked"); else if (y < lastSY - 6 || atEnd || y < 120) d.classList.remove("tucked");
+  lastSY = y;
+}, { passive: true });
+/* headings resolve from random characters, like a display warming up */
+function scramble(root) {
+  if (reduceMotion()) return;
+  const G = "£#%&*+=:.0123456789ABCDEFX";
+  root.querySelectorAll(".scramble").forEach(el => {
+    const txt = el.textContent, t0 = performance.now(), dur = 520 + txt.length * 28;
+    (function f(now) { const k = Math.min(1, (now - t0) / dur), n = Math.floor(k * txt.length);
+      el.textContent = txt.slice(0, n) + [...txt.slice(n)].map(ch => ch === " " ? " " : G[Math.floor(Math.random() * G.length)]).join("");
+      if (k < 1) requestAnimationFrame(f); else el.textContent = txt; })(t0);
+  });
+}
 function shell(body) {
   const nav = [["home", "Home", "home"], ["spend", "Spending", "spend"], ["flow", "Cash flow", "flow"], ["plan", "Plan", "plan"], ["insights", "Insights", "insight"]];
   const cur = ui.route === "statement" ? "insights" : ui.route === "import" ? "spend" : ui.route;
   const links = () => nav.map(n => '<a class="navbtn' + (cur === n[0] ? " on" : "") + '" href="#' + n[0] + '">' + svg(n[2]) + n[1] + '</a>').join("");
   const brand = '<a class="brand" href="#home">' + MARK + '<span><b>' + esc(nm("m")) + ' &amp; ' + esc(nm("s")) + '</b><small>Household money</small></span></a>';
+  if (worldOn()) {
+    const top = '<header class="wtop"><a class="brand" href="#home">' + MARK + '<span class="mono">' + esc(nm("m")) + ' &amp; ' + esc(nm("s")) + '</span></a><span class="mono dim wclock">' + esc(new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })) + '</span><a class="mono wlink" href="#settings">Settings</a></header>';
+    return '<div class="wshell">' + top + stageHTML() + '<main class="main">' + (S.mode === "demo" ? '<div class="banner info noprint" style="margin-bottom:14px">Sample numbers only. Nothing here is real or shared.</div>' : "") + body + '</main></div>' + dialHTML();
+  }
   return '<div class="shell"><aside class="side">' + brand + '<div class="sidenav"><span class="navblob" data-k="side"></span>' + links() + '</div><span class="grow"></span><a class="navbtn' + (cur === "settings" ? " on" : "") + '" href="#settings">' + svg("gear") + 'Settings</a></aside>'
     + '<main class="main"><header class="top">' + brand + '<span class="grow"></span><a class="roundbtn" href="#settings" aria-label="Settings">' + svg("gear", 20) + '</a></header>'
     + (S.mode === "demo" ? '<div class="banner info noprint" style="margin-bottom:14px">Sample numbers only. Nothing here is real or shared.</div>' : "")
@@ -665,7 +767,7 @@ function vHome() {
   const c = columns(), ym = thisYM(), who = me(), hr = new Date().getHours();
   const hi = (hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening") + ", " + new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const safe = safeToSpend(who), both = who ? safeToSpend(null) : null, streak = loggingStreak();
-  let h = '<div class="hello"><div><span class="hello-k">' + esc(hi) + '</span><h1 class="hello-name">Hello <b>' + esc(who ? nm(who) : nm("m") + " & " + nm("s")) + '</b>!</h1></div></div>';
+  let h = worldOn() ? "" : '<div class="hello"><div><span class="hello-k">' + esc(hi) + '</span><h1 class="hello-name">Hello <b>' + esc(who ? nm(who) : nm("m") + " & " + nm("s")) + '</b>!</h1></div></div>';
   if (!who) h += '<section class="card" style="margin-bottom:12px"><h3>Which one are you?</h3><p class="sub">So it greets you and fills in who paid.</p><div class="row wrap">' + PEOPLE.map(p => '<button class="btn" data-act="iam" data-v="' + p + '"><span class="dot ' + p + '"></span>' + esc(nm(p)) + '</button>').join("") + '</div></section>';
   const last = S.statements[0];
   if (last && LS.get("ms-recap-seen") !== last.id) h += '<button class="recapbar" data-act="recap" data-v="' + esc(last.id) + '"><span class="play">▶</span><span class="grow"><b>Your ' + esc(ymLabel(last.id).split(" ")[0]) + ' recap is ready</b><br><span style="opacity:.75">Tap to see how the month went</span></span></button>';
@@ -679,6 +781,15 @@ function vHome() {
         + '<p class="subl">' + (safe.left >= 0 ? gbp(safe.left) + ' left in ' + (who ? 'your and joint budgets' : 'your budgets') + ' this month' + (both ? '. Together it’s ' + gbp(Math.max(0, both.perDay)) + ' a day.' : '.') : 'Budgets are ' + gbp(-safe.left) + ' over for this month.') + '</p>'
       : '<div class="herohead"><span class="k">Safe to spend today</span><span class="daysleft"><b>' + safe.daysLeft + '</b> ' + (safe.daysLeft === 1 ? "day" : "days") + ' left in ' + esc(ymLabel(ym).split(" ")[0]) + '</span></div>' + '<span class="huge">£?</span><p class="subl">Add your budgets in Plan and this shows what you can spend each day.</p>')
     + '<div class="hchips">' + (streak ? '<span class="hchip"><i class="spark"></i>' + plural(streak, "day") + ' streak</span>' : '<span class="hchip"><i class="spark"></i>Log a purchase to start a streak</span>') + '<a class="hchip" href="#flow">' + esc(nextMoveText(ym)) + '</a></div></section>';
+  if (worldOn()) {
+    const perDay2 = Math.max(0, safe.perDay);
+    ui.homeStage = '<section class="stage st-home" aria-label="Today"><div class="stage-in"><span class="mono">' + esc(hi) + '</span><h1 class="stage-title hello-name">Hello <b class="scramble">' + esc(who ? nm(who) : nm("m") + " & " + nm("s")) + '</b></h1>'
+      + '<div class="stage-hero"><span class="mono">Safe to spend today</span>' + (S.budgets.length ? '<span class="huge num' + (safe.perDay < 0 ? " neg" : "") + '" data-count="' + perDay2.toFixed(0) + '">' + gbp(perDay2) + '</span>' : '<span class="huge">£?</span>')
+      + '<span class="mono dim">' + plural(safe.daysLeft, "day") + ' left in ' + esc(ymLabel(ym).split(" ")[0]) + (S.budgets.length ? ' · ' + (safe.left >= 0 ? gbp(safe.left) + ' left in budgets' : gbp(-safe.left) + ' over budget') : ' · add budgets in Plan') + '</span>'
+      + '<div class="hchips">' + (streak ? '<span class="hchip"><i class="spark"></i>' + plural(streak, "day") + ' streak</span>' : '<span class="hchip"><i class="spark"></i>Log a purchase to start a streak</span>') + '<a class="hchip" href="#flow">' + esc(nextMoveText(ym)) + '</a></div></div></div>'
+      + '<span class="stage-hint mono">Drag to spin. Tap the core. Moons are your savings pots</span></section>';
+    h = h.replace(/<section class="tile t-lime b-hero">[\s\S]*?<\/section>/, "");
+  }
   // spend tile
   const months = [5, 4, 3, 2, 1, 0].map(i => addM(ym, -i)), vals = months.map(m => sum(expensesOf(m).map(e => e.amount))), mx = Math.max(1, ...vals);
   const day = new Date().getDate(), lastSame = sum(expensesOf(addM(ym, -1)).filter(e => +e.date.slice(8, 10) <= day).map(e => e.amount)), cur = vals[5];
@@ -963,10 +1074,13 @@ function flowSpark(months, vals) {
     + '<circle class="pulse" cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="9" fill="var(--accent)" opacity=".18"/><circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="4.5" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>'
     + months.map((m, i) => '<text x="' + x(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + (i === 0 ? "start" : i === months.length - 1 ? "end" : "middle") + '" font-size="11" fill="var(--muted)"' + (i === months.length - 1 ? ' font-weight="700"' : "") + '>' + esc(ymLabel(m, true).split(" ")[0]) + '</text>').join("") + '</svg>';
 }
+function forecastDebt(extraMap, months) { const arr = Array(months + 1).fill(0); S.debts.forEach(d => { const p = debtPlan(d, extraMap ? extraMap[d.id] || 0 : 0); arr[0] += +d.balance || 0; for (let i = 1; i <= months; i++) arr[i] += p.path.length ? (i <= p.path.length ? p.path[i - 1] : 0) : (+d.balance || 0); }); return arr.map(r2); }
+function forecastPots(moMap, months) { const arr = Array(months + 1).fill(0); S.pots.forEach(p => { let c = +p.current || 0; arr[0] += c; const mo = moMap && moMap[p.id] != null ? moMap[p.id] : +p.monthly || 0; for (let i = 1; i <= months; i++) { const add = +p.goal > 0 ? Math.min(mo, Math.max(0, p.goal - c)) : mo; c += add; arr[i] += c; } }); return arr.map(r2); }
 function iForecast() {
   const fx = ui.fx, months = 24, labels = Array.from({ length: months + 1 }, (_, i) => i === 0 ? "Now" : ymLabel(addM(thisYM(), i - 1), true));
-  const debtSeries = extraMap => { const arr = Array(months + 1).fill(0); S.debts.forEach(d => { const p = debtPlan(d, extraMap ? extraMap[d.id] || 0 : 0); arr[0] += +d.balance || 0; for (let i = 1; i <= months; i++) arr[i] += p.path.length ? (i <= p.path.length ? p.path[i - 1] : 0) : (+d.balance || 0); }); return arr.map(r2); };
-  const potSeries = moMap => { const arr = Array(months + 1).fill(0); S.pots.forEach(p => { let c = +p.current || 0; arr[0] += c; const mo = moMap && moMap[p.id] != null ? moMap[p.id] : +p.monthly || 0; for (let i = 1; i <= months; i++) { const add = +p.goal > 0 ? Math.min(mo, Math.max(0, p.goal - c)) : mo; c += add; arr[i] += c; } }); return arr.map(r2); };
+  const debtSeries = m => forecastDebt(m, months), potSeries = m => forecastPots(m, months);
+  const _unusedD = extraMap => { const arr = Array(months + 1).fill(0); S.debts.forEach(d => { const p = debtPlan(d, extraMap ? extraMap[d.id] || 0 : 0); arr[0] += +d.balance || 0; for (let i = 1; i <= months; i++) arr[i] += p.path.length ? (i <= p.path.length ? p.path[i - 1] : 0) : (+d.balance || 0); }); return arr.map(r2); };
+  const _unusedP = moMap => { const arr = Array(months + 1).fill(0); S.pots.forEach(p => { let c = +p.current || 0; arr[0] += c; const mo = moMap && moMap[p.id] != null ? moMap[p.id] : +p.monthly || 0; for (let i = 1; i <= months; i++) { const add = +p.goal > 0 ? Math.min(mo, Math.max(0, p.goal - c)) : mo; c += add; arr[i] += c; } }); return arr.map(r2); };
   const base = columns(), now = columns(fx);
   const spareBase = base.m.left + base.s.left, spareNow = now.m.left + now.s.left;
   const changed = Object.keys(fx.debt).some(k => fx.debt[k]) || Object.keys(fx.pot).some(k => { const p = S.pots.find(x => x.id === k); return p && +p.monthly !== fx.pot[k]; });
@@ -1128,7 +1242,10 @@ function vSettings() {
   const s = st(), sh = jointShares(), need = jointNeed();
   let h = '<div class="stack"><div class="section-head"><h1>Settings</h1></div>';
   const th = (LS.get("ms-theme") || "chrome").replace("night", "chrome");
-  h += '<section class="card"><h2>Look</h2><p class="sub">Just for this phone or computer. The other person keeps their own choice.</p><div class="chips">' + [["chrome", "Liquid chrome, dark"], ["paper", "Paper, light and calm"], ["auto", "Match my phone"]].map(o => '<button class="chip' + (th === o[0] ? " on" : "") + '" data-act="theme" data-v="' + o[0] + '">' + o[1] + '</button>').join("") + '</div></section>';
+  const wo = LS.get("ms-world") !== "off", as = LS.get("ms-ascii") === "on";
+  h += '<section class="card"><h2>Look</h2><p class="sub">Just for this phone or computer. The other person keeps their own choice.</p><div class="chips">' + [["chrome", "Liquid chrome, dark"], ["paper", "Paper, light and calm"], ["auto", "Match my phone"]].map(o => '<button class="chip' + (th === o[0] ? " on" : "") + '" data-act="theme" data-v="' + o[0] + '">' + o[1] + '</button>').join("") + '</div>'
+    + '<div class="field">3D world<div class="chips"><button class="chip' + (wo ? " on" : "") + '" data-act="worldset" data-v="on">On</button><button class="chip' + (!wo ? " on" : "") + '" data-act="worldset" data-v="off">Off, simpler and lighter</button></div></div>'
+    + (wo ? '<div class="field">Picture style<div class="chips"><button class="chip' + (!as ? " on" : "") + '" data-act="asciiset" data-v="off">Smooth 3D</button><button class="chip' + (as ? " on" : "") + '" data-act="asciiset" data-v="on">Drawn in text characters</button></div></div>' : "") + '</section>';
   h += '<section class="card" data-keep><h2>The two of you</h2><div class="fgrid">'
     + PEOPLE.map(p => '<label class="field">Name<input id="nm-' + p + '" value="' + esc(s.names[p]) + '"></label><label class="field">Pay day<input id="pd-' + p + '" inputmode="numeric" value="' + s.payday[p] + '"></label><label class="field full">' + esc(nm(p)) + '’s sign in email<input id="em-' + p + '" type="email" value="' + esc(s.emails[p] || "") + '" placeholder="Used to greet you and show who added what"></label>').join("")
     + '</div><button class="btn primary" data-act="savepeople" style="align-self:flex-start">Save</button></section>';
@@ -1364,6 +1481,8 @@ async function onAct(el) {
   if (ui.arrange && el.closest("[data-sort]") && a !== "arrange") return;
   switch (a) {
     case "theme": LS.set("ms-theme", v); applyTheme(); ui.keepScroll = true; render(); break;
+    case "worldset": LS.set("ms-world", v); applyTheme(); ui.keepScroll = true; render(); break;
+    case "asciiset": LS.set("ms-ascii", v); applyTheme(); ui.keepScroll = true; render(); break;
     case "togglecol": { const t = el.dataset.t, k = el.dataset.k, h = colsHidden(t); h[k] = !h[k]; LS.set("ms-cols-" + t, JSON.stringify(h)); ui.keepScroll = true; render(); break; }
     case "setfield": openPop(el); break;
     case "popsave": savePop(); break;
@@ -1557,7 +1676,16 @@ function route() {
   ui.route = ["home", "spend", "flow", "plan", "insights", "statement", "settings", "import"].includes(h[0]) ? h[0] : (h[0] === "statements" ? "insights" : "home");
   ui.sub = h[0] === "statements" ? "statements" : (h[1] || "");
   ui.animate = true; ui.arrange = false; closePop();
-  transition(() => { closeSheet(); window.scrollTo(0, 0); if (rq) { cancelAnimationFrame(rq); rq = 0; } draw(); });
+  const go = () => { closeSheet(); window.scrollTo(0, 0); if (rq) { cancelAnimationFrame(rq); rq = 0; } draw(); };
+  if (worldOn()) {
+    World.go(STATION[ui.route] || "home");
+    const old = Array.from(document.querySelectorAll(".main > *, .stage-in > *"));
+    if (reduceMotion() || !old.length) { go(); return; }
+    old.forEach((el, i) => el.animate([{ opacity: 1, transform: "none", filter: "blur(0)" }, { opacity: 0, transform: "translateY(-14px)", filter: "blur(6px)" }], { duration: 260, delay: Math.min(i, 8) * 22, easing: "cubic-bezier(.5,0,.75,0)", fill: "forwards" }));
+    clearTimeout(ui.routeT); ui.routeT = setTimeout(go, 300);
+    return;
+  }
+  transition(go);
 }
 window.addEventListener("hashchange", route);
 

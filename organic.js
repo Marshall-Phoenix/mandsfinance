@@ -124,8 +124,8 @@ export function smoothPath(P) {
 /* Flowing lines (replace the static squiggle). */
 export function ribbons(cls) {
   return '<svg class="' + (cls || "squig") + '" viewBox="0 0 170 70" aria-hidden="true" preserveAspectRatio="none">'
-    + '<path data-line="0" data-g="170,34,18,1.6,1" fill="none" style="stroke:var(--rib1)" stroke-width="4" stroke-linecap="round"/>'
-    + '<path data-line="2" data-g="170,52,8,1.1,.7" fill="none" style="stroke:var(--rib2)" stroke-width="3" stroke-linecap="round"/></svg>';
+    + '<path data-rib="0" data-g="170,34,18,1.6,1" fill="none" style="stroke:var(--rib1)" stroke-width="4" stroke-linecap="round"/>'
+    + '<path data-rib="2" data-g="170,52,8,1.1,.7" fill="none" style="stroke:var(--rib2)" stroke-width="3" stroke-linecap="round"/></svg>';
 }
 function lineD(w, y, A, k, t, ph) {
   let d = "";
@@ -142,9 +142,9 @@ export function scan(root) {
   root = root || document;
   items = Array.from(root.querySelectorAll("[data-blob]")).map(el => { const g = el.dataset.g.split(",").map(Number); return { el, seed: +el.dataset.blob, g }; });
   waves = Array.from(root.querySelectorAll("[data-wave]")).map(el => ({ el, L: +el.dataset.wave, ph: +el.dataset.ph, A: +el.dataset.a }));
-  lines = Array.from(root.querySelectorAll("[data-line]")).map(el => { const g = el.dataset.g.split(",").map(Number); return { el, ph: +el.dataset.line, g }; });
+  lines = Array.from(root.querySelectorAll("[data-rib]")).map(el => { const g = el.dataset.g.split(",").map(Number); return { el, ph: +el.dataset.rib, g }; });
   if (!io && "IntersectionObserver" in window) io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting ? visible.add(e.target) : visible.delete(e.target)), { rootMargin: "60px" });
-  if (io) { io.disconnect(); root.querySelectorAll("svg").forEach(s => { if (s.querySelector("[data-blob],[data-wave],[data-line]")) io.observe(s); }); }
+  if (io) { io.disconnect(); root.querySelectorAll("svg").forEach(s => { if (s.querySelector("[data-blob],[data-wave],[data-rib]")) io.observe(s); }); }
   const bg = document.getElementById("organic-bg");
   if (bg) { bg.querySelectorAll("[data-blob]").forEach(el => { const g = el.dataset.g.split(",").map(Number); items.push({ el, seed: +el.dataset.blob, g }); }); if (io) bg.querySelectorAll("svg.ob").forEach(s => io.observe(s)); }
   born = performance.now();
