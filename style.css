@@ -292,11 +292,12 @@ td .sm{display:block;font-weight:400;font-size:12.5px;color:var(--muted)}
 /* swipe rows */
 .srow{position:relative;overflow:hidden;border-top:1px solid var(--line)}
 .srow:first-child{border-top:0}
-.srow .acts{position:absolute;right:0;top:0;bottom:0;display:flex}
+.srow .acts{position:absolute;right:0;top:0;bottom:0;display:flex;visibility:hidden;opacity:0;transition:opacity .2s}
+.srow.open .acts,.srow.moving .acts{visibility:visible;opacity:1}
 .srow .acts button{border:0;width:72px;font-weight:700}
 .srow .acts .e{background:var(--peri);color:var(--dark)}
 .srow .acts .d{background:var(--orange);color:var(--dark)}
-.srow .sin{position:relative;background:var(--surface);transition:transform .2s ease;touch-action:pan-y}
+.srow .sin{position:relative;background:var(--card);transition:transform .2s ease;touch-action:pan-y}
 .srow .sin .item{border-top:0}
 
 /* login */

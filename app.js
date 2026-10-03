@@ -1335,18 +1335,18 @@ function saveFile(name, text, type) {
 /* ================= swipe ================= */
 let sw = null;
 document.addEventListener("touchstart", e => {
-  const row = e.target.closest(".srow"); document.querySelectorAll(".srow .sin").forEach(x => { if (!row || !row.contains(x)) x.style.transform = ""; });
+  const row = e.target.closest(".srow"); document.querySelectorAll(".srow .sin").forEach(x => { if (!row || !row.contains(x)) { x.style.transform = ""; x.parentElement.classList.remove("open", "moving"); } });
   if (!row) return; sw = { row, x0: e.touches[0].clientX, y0: e.touches[0].clientY, dx: 0, lock: null, base: row.querySelector(".sin").style.transform ? -144 : 0 };
 }, { passive: true });
 document.addEventListener("touchmove", e => {
   if (!sw) return; const dx = e.touches[0].clientX - sw.x0, dy = e.touches[0].clientY - sw.y0;
   if (sw.lock == null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) sw.lock = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
   if (sw.lock !== "x") return;
-  sw.dx = Math.max(-160, Math.min(0, sw.base + dx)); const el = sw.row.querySelector(".sin"); el.style.transition = "none"; el.style.transform = "translateX(" + sw.dx + "px)";
+  sw.dx = Math.max(-160, Math.min(0, sw.base + dx)); const el = sw.row.querySelector(".sin"); el.style.transition = "none"; el.style.transform = "translateX(" + sw.dx + "px)"; sw.row.classList.add("moving");
 }, { passive: true });
 document.addEventListener("touchend", () => {
   if (!sw) return; const el = sw.row.querySelector(".sin"); el.style.transition = "";
-  if (sw.lock === "x") { el.style.transform = sw.dx < -60 ? "translateX(-144px)" : ""; sw.swiped = true; ui.justSwiped = Date.now(); }
+  if (sw.lock === "x") { el.style.transform = sw.dx < -60 ? "translateX(-144px)" : ""; el.parentElement.classList.toggle("open", sw.dx < -60); el.parentElement.classList.remove("moving"); sw.swiped = true; ui.justSwiped = Date.now(); }
   sw = null;
 });
 
