@@ -609,7 +609,11 @@ function draw() {
   const hero = app.querySelector(".b-hero");
   fitNumbers(app);
   // tables become labelled cards on small screens
-  app.querySelectorAll("table").forEach(tb => { const hs = Array.from(tb.querySelectorAll("thead th")).map(th => th.textContent.trim()); tb.querySelectorAll("tbody tr, tfoot tr").forEach(tr => Array.from(tr.children).forEach((td, i) => { if (hs[i] && !td.dataset.label) td.dataset.label = hs[i]; })); });
+  app.querySelectorAll("table").forEach(tb => {
+    const hs = Array.from(tb.querySelectorAll("thead th")).map(th => th.textContent.trim());
+    // follow colspans so every cell gets the heading of the column it really sits in
+    tb.querySelectorAll("tbody tr, tfoot tr").forEach(tr => { let col = 0; Array.from(tr.children).forEach(td => { if (hs[col] && !td.dataset.label && td.textContent.trim()) td.dataset.label = hs[col]; col += +td.getAttribute("colspan") || 1; }); });
+  });
   if (worldOn()) { syncWorld(); World.go(STATION[ui.route] || "home"); scramble(app); }
   else if (hero && document.documentElement.dataset.theme === "chrome") { if (mountChrome(hero, ui.hero)) hero.classList.add("has3d"); }
   if (ui.animate) { countUp(); setTimeout(() => app.classList.remove("anim"), 1100); }
@@ -702,7 +706,7 @@ document.addEventListener("pointerup", () => {
 });
 /* shrink any big number that would not fit its box, instead of cutting it off */
 function fitNumbers(root) {
-  root.querySelectorAll(".ptile .left, .huge, .spendbig, .stage-num, .up .big, .item .amt, .kv span").forEach(el => {
+  root.querySelectorAll(".ptile .left, .huge, .spendbig, .stage-num, .up .big, .item .amt, .kv span, .bigstat").forEach(el => {
     el.style.fontSize = "";
     let fs = parseFloat(getComputedStyle(el).fontSize), n = 0;
     const box = el.parentElement; if (!box) return;
@@ -1046,17 +1050,20 @@ function pickLabels(labels, x, fontPx, gap) {
 let CHART_ID = 0;
 function lineChart(series, labels, opts) {
   opts = opts || {};
-  const W = 640, H = 270, L = 64, R = 18, T = 16, B = 38, FS = 14;
+  const W = 640, H = 270, R = 18, T = 16, B = 38, FS = 14;
+  const axisTxt = v => Math.abs(v) >= 1000 ? (v < 0 ? "minus " : "") + "£" + (Math.abs(v) / 1000) + "k" : gbp(v);
   const all = series.flatMap(s => s.points).filter(v => v != null);
   if (!all.length) return '<div class="empty">Not enough data yet.</div>';
   let max = Math.max(...all, 0), min = Math.min(...all, 0);
   if (max === min) max = min + 1;
   const step = Math.pow(10, Math.floor(Math.log10((max - min) / 4 || 1))), nice = [1, 2, 2.5, 5, 10].map(m => m * step).find(s => (max - min) / s <= 5) || step * 10;
   max = Math.ceil(max / nice) * nice; min = Math.floor(min / nice) * nice;
+  let longest = 0; for (let v = min; v <= max + 1e-9; v += nice) longest = Math.max(longest, axisTxt(v).length);
+  const L = Math.max(52, Math.round(longest * FS * .58 + 18));
   const n = labels.length, x = i => L + (W - L - R) * (n > 1 ? i / (n - 1) : 0), y = v => T + (H - T - B) * (1 - (v - min) / (max - min));
   const cid = "lc" + (++CHART_ID);
   let g = "";
-  for (let v = min; v <= max + 1e-9; v += nice) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" stroke="var(--line)" stroke-width="1"' + (Math.abs(v) > 1e-9 ? ' stroke-dasharray="2 5"' : "") + '/><text x="' + (L - 10) + '" y="' + (y(v) + 4.5).toFixed(1) + '" text-anchor="end" font-size="' + FS + '" fill="var(--muted)">' + (Math.abs(v) >= 1000 ? (v < 0 ? "minus " : "") + "£" + (Math.abs(v) / 1000) + "k" : gbp(v)) + '</text>';
+  for (let v = min; v <= max + 1e-9; v += nice) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" stroke="var(--line)" stroke-width="1"' + (Math.abs(v) > 1e-9 ? ' stroke-dasharray="2 5"' : "") + '/><text x="' + (L - 10) + '" y="' + (y(v) + 4.5).toFixed(1) + '" text-anchor="end" font-size="' + FS + '" fill="var(--muted)">' + axisTxt(v) + '</text>';
   pickLabels(labels, x, FS, 14).forEach(i => { g += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="' + (i === n - 1 && n > 1 ? "end" : i === 0 ? "start" : "middle") + '" font-size="' + FS + '" fill="var(--muted)">' + esc(labels[i]) + '</text>'; });
   let defs = "";
   const lines = series.map((s, si) => {
@@ -1175,7 +1182,7 @@ function vStatement(id) {
 /* ---- CSV import ---- */
 function vImport() {
   const c = ui.csv;
-  let h = '<div class="stack"><div class="row noprint"><a class="btn small" href="#spend">‹ Spending</a></div><section class="card"><div><h1>Import a bank statement</h1><p class="sub">In your banking app or website, download your transactions as a CSV file, then choose it here. Bank of Scotland lets you do this under Statements, Export. Purchases you’ve already logged are skipped, and it remembers which budget each shop belongs to.</p></div>'
+  let h = '<div class="stack">' + (worldOn() ? "" : '<div class="row noprint"><a class="btn small" href="#spend">‹ Spending</a></div>') + '<section class="card"><div><h1>Import a bank statement</h1><p class="sub">In your banking app or website, download your transactions as a CSV file, then choose it here. Bank of Scotland lets you do this under Statements, Export. Purchases you’ve already logged are skipped, and it remembers which budget each shop belongs to.</p></div>'
     + '<div class="fgrid"><div class="field">Whose account is this<div class="chips">' + WHO.map(k => '<button class="chip' + ((c ? c.who : (me() || "m")) === k ? " on" : "") + '" data-act="csvwho" data-v="' + k + '"><span class="dot ' + k + '"></span>' + esc(nm(k)) + '</button>').join("") + '</div></div>'
     + '<label class="field">CSV file<input type="file" id="csvFile" accept=".csv,text/csv"></label></div></section>';
   if (!c || !c.rows) return h + '</div>';

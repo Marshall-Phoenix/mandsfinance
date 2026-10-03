@@ -903,3 +903,35 @@ input[type=date]::-webkit-date-and-time-value{text-align:left}
 .dial.tucked{--dy:92px;transform:translateX(-50%) translateY(var(--dy)) scale(var(--ds))}
 @media (max-height:740px){.dial{--ds:.84}.dial.tucked{--dy:78px}}
 .flowspark{max-height:170px;width:100%}
+
+/* ================= spacing rhythm (8px base) =================
+   between blocks 16 · before a section heading 40 · heading to its content 14 */
+.main>*{margin-top:0;margin-bottom:0}
+.main>*+*{margin-top:16px}
+.stack{gap:16px}
+.section-head{align-items:center!important;padding-top:0!important;margin-top:40px!important;margin-bottom:14px!important;min-height:34px}
+.main>.section-head:first-child,.stack>.section-head:first-child,.main>.stack:first-child>.section-head:first-child{margin-top:0!important}
+.stack>.section-head{margin-top:24px!important;margin-bottom:-2px!important}
+.section-head h1,.section-head h2,.section-head h3{margin:0}
+.section-head>.row{gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.section-head+*{margin-top:0!important}
+.recapbar{margin-bottom:0!important}
+.bento{gap:14px}
+.card{gap:14px}
+.alerts li+li{margin-top:4px}
+[data-theme] .stage-hero{gap:8px!important}
+[data-theme] .stage-in{gap:10px}
+
+/* title and its description: a clear 6px step, never touching */
+.card h2+.sub,.card h2+p,.card h3+.sub,.card h3+p{margin-top:6px}
+.card>div:first-child>h2{line-height:1.25}
+[data-theme] .bigstat{font-family:var(--numf)!important;font-size:var(--fig-l)!important;font-weight:500!important;letter-spacing:-.025em!important;line-height:1.05;display:block;overflow-wrap:anywhere}
+/* card view labels wrap instead of running off the edge */
+@media (max-width:700px){
+  .tablewrap td[data-label]:not(.name):not(.hcell)::before{white-space:normal;letter-spacing:.08em;line-height:1.3}
+  .tablewrap td{overflow-wrap:anywhere}
+  .tablewrap tbody tr,.tablewrap tfoot tr{padding-right:14px}
+}
+
+.card :is(h1,h2,h3)+:is(p,.sub,.note){margin-top:6px}
+[data-theme] .ptile{gap:7px!important}
