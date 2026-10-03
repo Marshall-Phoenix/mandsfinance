@@ -27,6 +27,7 @@ export function demoData() {
       }
     });
   });
+  [["Haircut", 28, 0], ["Parking", 6, 0], ["Parking", 4, -1], ["Haircut", 25, -1], ["Vet", 60, -2]].forEach((o, i) => { const ym = ymOf(o[2]); expenses.push({ id: "o" + i, ym, date: ym + "-" + pad(o[2] === 0 ? Math.min(now.getDate(), 1 + i) : 3 + i), amount: o[1], budgetId: "", who: i % 2 ? "m" : "s", note: o[0], ts: 99 + i }); });
   return {
     settings: { main: { names: { m: "Mukul", s: "Sylwia" }, payday: { m: 15, s: 28 }, jointDay: { m: 15, s: 28 }, split: "income", jointPayDay: 28, fx: { inr: 118.4, at: new Date().toISOString(), manual: true } } },
     meta: { state: { lastClosed: ymOf(-3) } },
@@ -51,7 +52,8 @@ export function demoData() {
     debts: map([
       { id: "d1", name: "Bank loan", who: "s", borrowed: 10000, apr: 7, balance: 8200, monthly: 175, day: 1, interestPaid: 610 },
       { id: "d2", name: "Credit card", who: "s", borrowed: 1500, apr: 23.9, balance: 1200, monthly: 90, day: 30, interestPaid: 140, emoji: "💳" },
-      { id: "d3", name: "Family loan", who: "m", borrowed: 4000, apr: 0, balance: 3500, monthly: 250, day: 17, interestPaid: 0, emoji: "🇮🇳", inr: true }
+      { id: "d3", name: "Family loan", who: "m", borrowed: 4000, apr: 0, balance: 3500, monthly: 250, day: 17, interestPaid: 0, emoji: "🇮🇳", inr: true, notes: "Sent to Mum, who passes it to my aunt." },
+      { id: "d4", name: "Overdraft", who: "s", borrowed: 0, apr: 0, balance: 400, monthly: 0, day: 1, interestPaid: 0 }
     ]),
     budgets: map(budgets),
     pots: map([
@@ -64,7 +66,9 @@ export function demoData() {
     yearly: map([
       { id: "y1", name: "Christmas", who: "j", amount: 600, month: 12, saved: 350, emoji: "🎄" },
       { id: "y2", name: "Car MOT and service", who: "s", amount: 240, month: 4, saved: 120, emoji: "🚗" },
-      { id: "y3", name: "Birthdays", who: "j", amount: 300, month: 9, saved: 25, emoji: "🎂" }
+      { id: "y3", name: "Birthdays", who: "j", amount: 300, month: 9, saved: 25, emoji: "🎂" },
+      { id: "y4", name: "Visa application", who: "m", amount: 1600, repeat: "once", month: 1, year: 2028, saved: 300, emoji: "🛂" },
+      { id: "y5", name: "MOT", who: "s", amount: 55, repeat: "yearly", month: (now.getMonth() + 2) % 12 + 1, saved: 20, emoji: "🔧" }
     ]),
     assets: map([
       { id: "a1", name: "Workplace pension", who: "m", kind: "pension", value: 6200, monthly: 380, growth: 5, autoAdd: true, emoji: "🏦" },

@@ -11,10 +11,11 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="M&amp;S Money">
+<script>try{var t=localStorage.getItem("ms-theme")||"paper";if(t==="auto")t=matchMedia("(prefers-color-scheme: dark)").matches?"night":"paper";document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme="paper";}</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" style="fill:#24274a"/><rect width="2.6" height="7" style="fill:#3d4275"/></pattern></defs></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" style="fill:var(--hatch-a)"/><rect width="2.6" height="7" style="fill:var(--hatch-b)"/></pattern></defs></svg>
 <div id="app"><div class="boot">Loading…</div></div>
 <div class="scrim" id="sheet" hidden><div class="panel" id="panel" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" hidden></div>

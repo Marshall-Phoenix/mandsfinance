@@ -48,7 +48,10 @@ const ICON = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
   bin: '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>',
-  back: '<path d="M15 5l-7 7 7 7"/>'
+  back: '<path d="M15 5l-7 7 7 7"/>',
+  minus: '<path d="M5 12h14"/>',
+  note: '<path d="M5 4h10l4 4v12H5z"/><path d="M9 12h6M9 16h4"/>',
+  grip: '<circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/>'
 };
 const svg = (k, size) => '<svg viewBox="0 0 24 24" width="' + (size || 22) + '" height="' + (size || 22) + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
 const MARK = mark();
@@ -91,7 +94,7 @@ const emo = x => x && x.emoji ? '<span class="emo">' + esc(x.emoji) + '</span> '
 /* ================= data layer ================= */
 let DB = null;
 function memoryDB() {
-  const KEY = "ms-demo-v2";
+  const KEY = "ms-demo-v3";
   let data;
   try { data = JSON.parse(LS.get(KEY) || "null"); } catch (e) { data = null; }
   if (!data) data = demoData();
@@ -108,7 +111,7 @@ function memoryDB() {
     async merge(c, id, d) { data[c] = data[c] || {}; data[c][id] = deepMerge(data[c][id], d); emit(); },
     async remove(c, id) { if (data[c]) delete data[c][id]; emit(); },
     async add(c, d) { const id = uid(); await this.set(c, id, d); return id; },
-    async batch(ops) { ops.forEach(o => { data[o.c] = data[o.c] || {}; if (o.op === "delete") delete data[o.c][o.id]; else data[o.c][o.id || uid()] = JSON.parse(JSON.stringify(o.d)); }); emit(); },
+    async batch(ops) { ops.forEach(o => { data[o.c] = data[o.c] || {}; if (o.op === "delete") delete data[o.c][o.id]; else if (o.op === "update" && data[o.c][o.id]) Object.assign(data[o.c][o.id], JSON.parse(JSON.stringify(o.d))); else data[o.c][o.id || uid()] = JSON.parse(JSON.stringify(o.d)); }); emit(); },
     async getAll(c) { return list(c); },
     async expensesFor(ym) { return list("expenses").filter(e => e.ym === ym); },
     async closeMonth(expected, m, build) {
@@ -147,7 +150,7 @@ async function firebaseDB() {
     async batch(ops) {
       for (let i = 0; i < ops.length; i += 400) {
         const b = FB.writeBatch(db);
-        ops.slice(i, i + 400).forEach(o => { const ref = o.id ? FB.doc(db, o.c, o.id) : FB.doc(FB.collection(db, o.c)); if (o.op === "delete") b.delete(ref); else b.set(ref, o.d); });
+        ops.slice(i, i + 400).forEach(o => { const ref = o.id ? FB.doc(db, o.c, o.id) : FB.doc(FB.collection(db, o.c)); if (o.op === "delete") b.delete(ref); else if (o.op === "update") b.update(ref, o.d); else b.set(ref, o.d); });
         await b.commit();
       }
     },
@@ -210,7 +213,21 @@ const debtActive = d => (+d.balance || 0) > 0.004;
 const potActive = p => !(+p.goal > 0) || (+p.current || 0) < (+p.goal);
 function potMonthly(p, mo) { if (!potActive(p)) return 0; const m = mo != null ? mo : (+p.monthly || 0); return +p.goal > 0 ? Math.min(m, (+p.goal) - (+p.current || 0)) : m; }
 function debtMonthly(d, extra) { if (!debtActive(d)) return 0; const bal = +d.balance || 0, i = bal * (+d.apr || 0) / 1200; return Math.min((+d.monthly || 0) + (extra || 0), bal + i); }
-const yearlyMonthly = y => r2((+y.amount || 0) / 12);
+/* Upcoming costs: either every year in a given month, or just once in a given month and year. */
+const isOnce = y => y.repeat === "once";
+function dueYM(y, from) {
+  from = from || thisYM();
+  if (isOnce(y)) return (+y.year || +from.slice(0, 4)) + "-" + pad(+y.month || 1);
+  const fy = +from.slice(0, 4), fm = +from.slice(5, 7), m = +y.month || 1;
+  return (m >= fm ? fy : fy + 1) + "-" + pad(m);
+}
+const monthsBetween = (a, b) => (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7));
+function yearlyMonthly(y, from) {
+  if (y.done) return 0;
+  if (!isOnce(y)) return r2((+y.amount || 0) / 12);
+  const left = Math.max(0, (+y.amount || 0) - (+y.saved || 0)), n = monthsBetween(from || thisYM(), dueYM(y));
+  return n > 0 ? r2(left / n) : 0;
+}
 
 function totalsFor(k, fx) {
   fx = fx || { debt: {}, pot: {} };
@@ -257,7 +274,8 @@ function debtInfo(d, extra) {
   const borrowed = +d.borrowed || 0, bal = +d.balance || 0;
   return {
     plan, finishYM, finishISO: finishYM ? isoOf(finishYM, d.day) : null,
-    totalWithInterest: borrowed > 0 && plan.interest != null ? r2(borrowed + (+d.interestPaid || 0) + plan.interest) : null,
+    totalWithInterest: borrowed > 0 ? (plan.interest != null ? r2(borrowed + (+d.interestPaid || 0) + plan.interest) : r2(borrowed * (1 + (+d.apr || 0) / 100))) : null,
+    totalIsEstimate: borrowed > 0 && plan.interest == null && (+d.apr || 0) > 0,
     pct: borrowed > 0 ? Math.max(0, Math.min(1, (borrowed - bal) / borrowed)) : (bal <= 0 ? 1 : 0)
   };
 }
@@ -323,9 +341,10 @@ function flowItems(ym) {
   S.subs.filter(x => subOccurs(x, ym)).forEach(x => items.push({ key: "sub-" + x.id, day: dayIn(ym, x.day), type: "sub", from: x.who, amount: x.freq === "weekly" ? subMonthly(x) : (+x.cost || 0), label: x.name, freq: x.freq, month: x.month }));
   S.debts.filter(d => debtMonthly(d) > 0).forEach(d => items.push({ key: "debt-" + d.id, day: dayIn(ym, d.day), type: "debt", from: d.who, amount: debtMonthly(d), label: "Pay " + d.name, emoji: d.emoji }));
   S.pots.filter(p => potMonthly(p) > 0).forEach(p => items.push({ key: "pot-" + p.id, day: dayIn(ym, p.day || s.payday[p.who] || s.jointPayDay), type: "pot", from: p.who, amount: potMonthly(p), label: "Save into " + p.name, emoji: p.emoji }));
-  WHO.forEach(k => { const t = sum(S.yearly.filter(y => y.who === k).map(yearlyMonthly)); if (t > 0) items.push({ key: "yearly-" + k, day: dayIn(ym, k === "j" ? s.jointPayDay : s.payday[k]), type: "pot", from: k, amount: t, label: "Set aside for yearly costs", emoji: "🗓️" }); });
+  WHO.forEach(k => { const t = sum(S.yearly.filter(y => y.who === k).map(y => yearlyMonthly(y, ym))); if (t > 0) items.push({ key: "yearly-" + k, day: dayIn(ym, k === "j" ? s.jointPayDay : s.payday[k]), type: "pot", from: k, amount: t, label: "Set aside for upcoming costs", emoji: "🗓️" }); });
+  S.yearly.filter(y => !y.done && (isOnce(y) ? dueYM(y) === ym : +y.month === +ym.slice(5, 7))).forEach(y => items.push({ key: "due-" + y.id, day: dayIn(ym, +y.day || 15), type: "due", from: y.who, amount: +y.amount || 0, label: y.name + " (estimate)", emoji: y.emoji || "📌" }));
   items.forEach(i => { i.amount = r2(i.amount); });
-  const rank = { in: 0, move: 1, debt: 2, pot: 3, bill: 4, sub: 5 };
+  const rank = { in: 0, move: 1, debt: 2, pot: 3, bill: 4, sub: 5, due: 6 };
   return items.sort((a, b) => a.day - b.day || rank[a.type] - rank[b.type]);
 }
 const isManual = i => i.type === "move" || i.type === "debt" || i.type === "pot";
@@ -354,11 +373,12 @@ function buildClose(m) {
     });
     const mo = +m.slice(5, 7);
     cur.yearly.forEach(y => {
-      const add = Math.min(yearlyMonthly(y), Math.max(0, (+y.amount || 0) - (+y.saved || 0)));
+      if (y.done) return;
+      const add = Math.min(yearlyMonthly(y, m), Math.max(0, (+y.amount || 0) - (+y.saved || 0)));
       let saved = r2((+y.saved || 0) + add);
-      const due = +y.month === mo;
+      const due = isOnce(y) ? dueYM(y) <= m : +y.month === mo;
       if (due) saved = 0;
-      w.push({ op: "update", c: "yearly", id: y.id, d: { saved } });
+      w.push({ op: "update", c: "yearly", id: y.id, d: isOnce(y) && due ? { saved, done: true } : { saved } });
       yRows.push({ name: y.name, who: y.who, paid: r2(add), due, amount: +y.amount || 0 });
     });
     let assetsTotal = 0;
@@ -468,6 +488,92 @@ function countUp() {
   });
 }
 
+function applyTheme() {
+  let t = LS.get("ms-theme") || "paper";
+  if (t === "auto") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "paper";
+  document.documentElement.dataset.theme = t;
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = t === "night" ? "#0f1020" : "#f3f0e9";
+}
+applyTheme();
+if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+
+/* ================= pop out for numbers still to set ================= */
+let pop = null;
+function openPop(btn) {
+  closePop();
+  const r = btn.getBoundingClientRect(), el = document.createElement("div");
+  el.className = "pop"; el.setAttribute("role", "dialog");
+  el.innerHTML = '<label class="field">' + esc(btn.dataset.l) + '<input id="pop-in" inputmode="decimal" placeholder="0.00"></label><div class="row"><button class="btn small" data-act="popclose">Cancel</button><button class="btn small primary" data-act="popsave">Save</button></div>';
+  document.body.appendChild(el);
+  const w = el.offsetWidth, h = el.offsetHeight;
+  el.style.left = Math.max(12, Math.min(innerWidth - w - 12, r.left + r.width / 2 - w / 2)) + "px";
+  el.style.top = (r.bottom + h + 16 < innerHeight ? r.bottom + 8 : Math.max(12, r.top - h - 8)) + "px";
+  pop = { el, c: btn.dataset.c, id: btn.dataset.id, f: btn.dataset.f };
+  setTimeout(() => { const i = $("#pop-in"); if (i) i.focus(); }, 30);
+}
+function closePop() { if (pop) { pop.el.remove(); pop = null; } }
+async function savePop() {
+  if (!pop) return; const v = num($("#pop-in").value);
+  if (!(v > 0)) { toast("Type a number"); return; }
+  const { c, id, f } = pop; closePop();
+  try { await DB.merge(c, id, { [f]: v }); toast("Saved"); } catch (e) { fail(e); }
+}
+document.addEventListener("keydown", e => { if (!pop) return; if (e.key === "Enter" && e.target.id === "pop-in") { e.preventDefault(); e.stopPropagation(); savePop(); } if (e.key === "Escape") closePop(); }, true);
+document.addEventListener("pointerdown", e => { if (pop && !pop.el.contains(e.target) && !e.target.closest(".unset")) closePop(); });
+window.addEventListener("scroll", () => closePop(), { passive: true });
+
+/* ================= drag to reorder ================= */
+let drag = null, justDragged = 0;
+document.addEventListener("pointerdown", e => {
+  const g = e.target.closest("[data-grip]");
+  const card = !g && ui.arrange ? e.target.closest("[data-sort] > [data-id]") : null;
+  if (!g && !card) return;
+  const item = g ? g.closest("[data-id]") : card, list = item && item.parentElement;
+  if (!list || !list.dataset.sort) return;
+  e.preventDefault();
+  drag = { item, list, c: list.dataset.sort, x0: e.clientX, y0: e.clientY, moved: false };
+}, { passive: false });
+document.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  if (!drag.moved) { if (Math.hypot(dx, dy) < 5) return; drag.moved = true; drag.item.classList.add("dragging"); document.body.classList.add("is-dragging"); }
+  e.preventDefault();
+  drag.item.style.transform = "translate(" + dx + "px," + dy + "px)";
+  drag.item.style.pointerEvents = "none";
+  const under = document.elementFromPoint(e.clientX, e.clientY), t = under && under.closest("[data-id]");
+  if (!t || t === drag.item || t.parentElement !== drag.list) return;
+  const tr = t.getBoundingClientRect(), row = drag.item.tagName === "TR";
+  const after = row ? e.clientY > tr.top + tr.height / 2 : (Math.abs(e.clientY - (tr.top + tr.height / 2)) < tr.height / 2 ? e.clientX > tr.left + tr.width / 2 : e.clientY > tr.top + tr.height / 2);
+  const ref = after ? t.nextSibling : t;
+  if (ref === drag.item || ref === drag.item.nextSibling) return;
+  // FLIP: remember where everything was, move, then animate from there
+  const sibs = Array.from(drag.list.children).filter(x => x !== drag.item), before = new Map(sibs.map(x => [x, x.getBoundingClientRect()]));
+  const r1 = drag.item.getBoundingClientRect();
+  drag.list.insertBefore(drag.item, ref);
+  drag.item.style.transform = "none";
+  const r2 = drag.item.getBoundingClientRect();
+  const ndx = r1.left - r2.left, ndy = r1.top - r2.top;
+  drag.x0 = e.clientX - ndx; drag.y0 = e.clientY - ndy;
+  drag.item.style.transform = "translate(" + ndx + "px," + ndy + "px)";
+  sibs.forEach(x => { const a = before.get(x), b = x.getBoundingClientRect(); const mx = a.left - b.left, my = a.top - b.top; if (!mx && !my) return; x.style.transition = "none"; x.style.transform = "translate(" + mx + "px," + my + "px)"; x.getBoundingClientRect(); x.style.transition = "transform .45s var(--spring)"; x.style.transform = ""; });
+}, { passive: false });
+function endDrag() {
+  if (!drag) return;
+  const d = drag; drag = null;
+  document.body.classList.remove("is-dragging");
+  d.item.classList.remove("dragging"); d.item.style.transform = ""; d.item.style.pointerEvents = "";
+  if (!d.moved) return;
+  justDragged = Date.now();
+  const ids = Array.from(d.list.children).map(x => x.dataset.id).filter(Boolean);
+  const coll = S[d.c] || [];
+  const ops = ids.map((id, i) => ({ op: "update", c: d.c, id, d: { order: i } })).filter(o => coll.some(x => x.id === o.id));
+  coll.forEach(x => { const i = ids.indexOf(x.id); if (i >= 0) x.order = i; }); coll.sort(byOrder);
+  DB.batch(ops).catch(fail);
+  ui.keepScroll = true; render();
+}
+document.addEventListener("pointerup", endDrag);
+document.addEventListener("pointercancel", endDrag);
+
 /* ================= render ================= */
 let rq = 0, pendingDraw = false;
 function render() { if (rq) return; rq = requestAnimationFrame(() => { rq = 0; draw(); }); }
@@ -475,6 +581,7 @@ function draw() {
   const app = $("#app");
   const ae = document.activeElement;
   if (ae && app.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName) && ae.closest("[data-keep]")) { pendingDraw = true; return; }
+  if (drag && drag.moved) { pendingDraw = true; return; }
   pendingDraw = false;
   if (S.mode === "live" && !S.user) { app.innerHTML = vLogin(); scan(app); return; }
   if (!ready()) { app.innerHTML = '<div class="boot">' + BOOT + 'Loading your money…</div>'; scan(app); return; }
@@ -560,7 +667,7 @@ function vHome() {
   h += '<div class="bento">';
   // hero
   const perDay = Math.max(0, safe.perDay);
-  h += '<section class="tile t-lime b-hero">' + flower(String(safe.daysLeft), safe.daysLeft === 1 ? "day left" : "days left", "#15162b", "#d9f15a", "days" + ym) + SQUIG
+  h += '<section class="tile t-lime b-hero">' + flower(String(safe.daysLeft), safe.daysLeft === 1 ? "day left" : "days left", "var(--badge-bg)", "var(--badge-ink)", "days" + ym) + SQUIG
     + (S.budgets.length
       ? '<span class="k">Safe to spend today</span><span class="huge num' + (safe.perDay < 0 ? " neg" : "") + '" data-count="' + perDay.toFixed(0) + '">' + gbp(perDay) + '</span>'
         + '<p class="subl">' + (safe.left >= 0 ? gbp(safe.left) + ' left in ' + (who ? 'your and joint budgets' : 'your budgets') + ' this month' + (both ? '. Together it’s ' + gbp(Math.max(0, both.perDay)) + ' a day.' : '.') : 'Budgets are ' + gbp(-safe.left) + ' over for this month.') + '</p>'
@@ -571,7 +678,7 @@ function vHome() {
   const day = new Date().getDate(), lastSame = sum(expensesOf(addM(ym, -1)).filter(e => +e.date.slice(8, 10) <= day).map(e => e.amount)), cur = vals[5];
   h += '<section class="tile t-ink b-spend"><div class="spendhead"><div><span class="k" style="opacity:1;color:var(--muted)">Spent in ' + esc(ymLabel(ym).split(" ")[0]) + '</span><div class="spendbig num" data-count="' + cur.toFixed(0) + '">' + gbp(cur) + '</div></div>'
     + (lastSame > 0 ? '<span class="pill ' + (cur <= lastSame ? "good" : "warn") + '">' + (cur <= lastSame ? "↓ " + gbp(lastSame - cur) + " less" : "↑ " + gbp(cur - lastSame) + " more") + ' than this time last month</span>' : '<a class="btn small" href="#spend">See purchases</a>') + '</div>'
-    + '<div class="mbars">' + months.map((m, i) => '<div class="col' + (i === 5 ? " cur" : "") + '" title="' + esc(ymLabel(m)) + ': ' + gbp(vals[i]) + '">' + (i === 5 && cur > 0 ? '<span class="note num" style="color:var(--lime);font-weight:700">' + gbp(cur) + '</span>' : '') + '<div class="b" style="height:' + Math.max(3, vals[i] / mx * 100).toFixed(1) + '%;background:' + (i === 5 ? "var(--lime)" : "repeating-linear-gradient(135deg,var(--surface2) 0 6px,var(--line2) 6px 9px)") + '"></div><span class="lb">' + esc(ymLabel(m, true).split(" ")[0]) + '</span></div>').join("") + '</div></section>';
+    + '<div class="mbars">' + months.map((m, i) => '<div class="col' + (i === 5 ? " cur" : "") + '" title="' + esc(ymLabel(m)) + ': ' + gbp(vals[i]) + '">' + (i === 5 && cur > 0 ? '<span class="note num" style="color:var(--accent);font-weight:700">' + gbp(cur) + '</span>' : '') + '<div class="b" style="height:' + Math.max(3, vals[i] / mx * 100).toFixed(1) + '%;background:' + (i === 5 ? "var(--accent)" : "repeating-linear-gradient(135deg,var(--surface2) 0 6px,var(--line2) 6px 9px)") + '"></div><span class="lb">' + esc(ymLabel(m, true).split(" ")[0]) + '</span></div>').join("") + '</div></section>';
   // people
   const ptile = k => { const x = c[k], name = k === "j" ? "Joint" : nm(k), ini = k === "j" ? "&" : name.charAt(0);
     return '<div class="ptile ' + k + '"><div class="row between"><span class="av">' + esc(ini) + '</span><span class="tiny num">' + (x.income > 0 ? Math.round(x.util * 100) + "% used" : "") + '</span></div><span class="nm">' + esc(name) + '</span><span class="left num">' + (x.income > 0 ? gbp(Math.abs(x.left)) : "£0") + '</span><span class="tiny">' + (x.income > 0 ? (x.left < 0 ? "short" : "left") + " of " + gbp(x.income) : (k === "j" ? "Nothing moved in yet" : "Add income in Plan")) + '</span><div class="bar"><i style="width:' + Math.min(100, x.util * 100).toFixed(0) + '%"></i></div><span class="tiny">Bills ' + gbp(x.bills) + ', subs ' + gbp(x.subs) + '</span></div>'; };
@@ -581,28 +688,33 @@ function vHome() {
   if (al.length) h += '<div class="section-head"><h2>Worth a look</h2></div><section class="card"><ul class="alerts">' + al.map(a => '<li><span class="ic pill ' + a[0] + '" style="padding:0">' + a[1] + '</span><span>' + a[2] + '</span></li>').join("") + '</ul></section>';
   // challenges as chips
   const act = S.challenges.map(x => Object.assign({ x }, challengeStatus(x))).filter(s => s.state === "on" || s.state === "soon" || (s.end >= addD(todayISO(), -3)));
-  const chipCol = ["#d9f15a", "#f6a9cf", "#8f9bf5", "#f2652f"];
+  const chipCol = ["var(--lime)", "var(--pink)", "var(--peri)", "var(--orange)"];
   h += '<div class="section-head"><h2>Challenges</h2></div><div class="challenge-row">' + act.map((s, i) => {
     const x = s.x, st2 = s.state === "won" ? "Done!" : s.state === "lost" ? "Missed" : s.state === "soon" ? "Starts " + dayLabel(s.start) : plural(s.daysLeft, "day") + " left";
     return '<button class="chip-c" data-act="editchal" data-id="' + esc(x.id) + '">' + token(chipCol[i % 4], x.emoji, s.state, x.id) + '<b>' + esc(x.name) + '</b><span class="note">' + esc(st2) + (x.kind === "under" ? ", " + gbp(s.spent) + " of " + gbp(s.limit) : s.spent > 0 ? ", " + gbp(s.spent) + " spent" : "") + '</span></button>';
   }).join("") + '<button class="chip-c add" data-act="newchal"><span style="font-size:30px">+</span><b>New challenge</b><span class="note">No takeaway week, £50 food shop…</span></button></div>';
   // budgets
-  h += '<div class="section-head"><h2>Budgets</h2><a class="btn small" href="#plan/budgets">Edit</a></div>';
-  h += S.budgets.length ? '<div class="rings">' + S.budgets.map(b => {
+  // coming up
+  const ups = S.yearly.filter(y => !y.done && +y.amount > 0).map(y => ({ y, due: dueYM(y), n: monthsBetween(ym, dueYM(y)) })).filter(u => u.n >= 0 && u.n <= 6).sort((a, b) => a.n - b.n).slice(0, 4);
+  if (ups.length) h += '<div class="section-head"><h2>Coming up</h2><a class="btn small" href="#plan/yearly">All upcoming</a></div><div class="upcoming">' + ups.map(u => { const pct = Math.min(1, (+u.y.saved || 0) / (+u.y.amount || 1));
+    return '<button class="up" data-act="edit" data-c="yearly" data-id="' + esc(u.y.id) + '"><span class="when">' + (u.n === 0 ? "This month" : u.n === 1 ? "Next month" : "In " + u.n + " months") + '</span><span class="what">' + (u.y.emoji ? esc(u.y.emoji) + " " : "") + esc(u.y.name) + '</span><span class="num big">' + gbp(u.y.amount) + '</span><span class="bar"><i style="width:' + (pct * 100).toFixed(0) + '%"></i></span><span class="tiny">' + gbp(+u.y.saved || 0) + ' set aside, ' + esc(ymLabel(u.due, true)) + '</span></button>'; }).join("") + '</div>';
+  const arrBtn = '<button class="btn small' + (ui.arrange ? " primary" : "") + '" data-act="arrange">' + (ui.arrange ? "Done" : "Arrange") + '</button>';
+  h += '<div class="section-head"><h2>Budgets</h2><div class="row">' + arrBtn + '<a class="btn small" href="#plan/budgets">Edit</a></div></div>';
+  h += S.budgets.length ? '<div class="rings' + (ui.arrange ? " arranging" : "") + '" data-sort="budgets">' + S.budgets.map(b => {
     const sp = budgetSpent(b, ym), a = +b.amount || 0, over = sp > a && a > 0;
     return '<div class="ring" data-act="openbudget" data-id="' + esc(b.id) + '">' + ring({ segs: [{ f: a ? sp / a : 0, c: itemColor(b) }], over, emoji: b.emoji, centre: over ? gbp(sp - a) : gbp(Math.max(0, a - sp)), sub: over ? "over" : "left", label: b.name })
       + '<div class="t">' + esc(b.name) + '</div>' + whoTag(b.who) + '<div class="k num">' + gbp(sp) + ' of ' + gbp(a) + ' spent</div></div>';
   }).join("") + '</div>' : '<div class="empty">No budgets yet. <a href="#plan/budgets">Add one</a></div>';
-  h += '<div class="section-head"><h2>Debt</h2><a class="btn small" href="#plan/debts">Edit</a></div>';
-  const ds = S.debts.slice().sort((a, b) => (+b.apr || 0) - (+a.apr || 0));
-  h += ds.length ? '<div class="rings">' + ds.map(d => {
+  h += '<div class="section-head"><h2>Debt</h2><div class="row">' + arrBtn + '<a class="btn small" href="#plan/debts">Edit</a></div></div>';
+  const ds = S.debts.slice();
+  h += ds.length ? '<div class="rings' + (ui.arrange ? " arranging" : "") + '" data-sort="debts">' + ds.map(d => {
     const inf = debtInfo(d);
     return '<div class="ring" data-act="edit" data-c="debts" data-id="' + esc(d.id) + '">' + ring({ segs: [{ f: inf.pct, c: itemColor(d) }], emoji: d.emoji, centre: gbp(d.balance), sub: "left", label: d.name })
       + '<div class="t">' + esc(d.name) + '</div>' + whoTag(d.who)
       + '<div class="facts"><span>Months left</span><span>' + (inf.plan.done ? "Paid off" : inf.plan.months != null ? inf.plan.months : "Not set") + '</span><span>Finished</span><span>' + (inf.plan.done ? "Done" : inf.finishISO ? dateLabel(inf.finishISO) : "Not set") + '</span><span>Interest paid</span><span>' + gbp(+d.interestPaid || 0, 1) + '</span></div>' + (d.inr ? inrOf(+d.balance || 0) : "") + '</div>';
   }).join("") + '</div>' : '<div class="empty">No debts. Nice.</div>';
-  h += '<div class="section-head"><h2>Saving goals</h2><a class="btn small" href="#plan/pots">Edit</a></div>';
-  h += S.pots.length ? '<div class="rings">' + S.pots.map(p => {
+  h += '<div class="section-head"><h2>Saving goals</h2><div class="row">' + arrBtn + '<a class="btn small" href="#plan/pots">Edit</a></div></div>';
+  h += S.pots.length ? '<div class="rings' + (ui.arrange ? " arranging" : "") + '" data-sort="pots">' + S.pots.map(p => {
     const inf = potInfo(p);
     return '<div class="ring" data-act="edit" data-c="pots" data-id="' + esc(p.id) + '">' + ring({ segs: jointSegs(inf.pct, p), emoji: p.emoji, centre: gbp(inf.cur), sub: inf.goal ? "of " + gbp(inf.goal) : "saved", label: p.name })
       + '<div class="t">' + esc(p.name) + '</div>' + whoTag(p.who)
@@ -623,8 +735,8 @@ function alerts(c) {
   const hi = S.debts.filter(d => debtActive(d) && +d.apr > 10).sort((a, b) => b.apr - a.apr)[0];
   if (hi) out.push(["warn", "%", "<b>" + esc(hi.name) + "</b> charges " + hi.apr + "% interest, the most expensive debt. Try its slider in Insights to see what overpaying saves."]);
   S.debts.filter(d => debtActive(d) && !(+d.monthly > 0)).slice(0, 2).forEach(d => out.push(["plain", "?", "<b>" + esc(d.name) + "</b> has no monthly repayment set, so it can't show a finish date."]));
-  const soon = S.yearly.filter(y => { const due = +y.month, mo = +ym.slice(5, 7); const left = ((due - mo) % 12 + 12) % 12; return left <= 1 && (+y.saved || 0) < (+y.amount || 0) * .9; });
-  soon.forEach(y => out.push(["warn", "🗓", "<b>" + esc(y.name) + "</b> is due in " + monthName(y.month) + " and only " + gbp(+y.saved || 0) + " of " + gbp(y.amount) + " is set aside."]));
+  const soon = S.yearly.filter(y => !y.done && monthsBetween(ym, dueYM(y)) <= 1 && monthsBetween(ym, dueYM(y)) >= 0 && (+y.saved || 0) < (+y.amount || 0) * .9);
+  soon.forEach(y => out.push(["warn", "🗓", "<b>" + esc(y.name) + "</b> is due in " + esc(ymLabel(dueYM(y))) + " and only " + gbp(+y.saved || 0) + " of " + gbp(y.amount) + " is set aside."]));
   return out.slice(0, 5);
 }
 
@@ -642,7 +754,21 @@ function vSpend() {
     const sp = budgetSpent(b, ym), a = +b.amount || 0;
     return '<tr class="click" data-act="openbudget" data-id="' + esc(b.id) + '"><td class="name">' + emo(b) + esc(b.name) + '</td><td>' + whoTag(b.who) + '</td><td class="r">' + gbp(a, 1) + '</td><td class="r">' + gbp(sp, 1) + '</td><td class="r" style="color:' + (sp > a ? "var(--bad)" : "inherit") + '">' + (sp > a ? gbp(sp - a, 1) + " over" : gbp(a - sp, 1)) + '</td></tr>';
   }).join("");
-  h += '<section class="card"><div class="row between"><h3>Running budgets</h3><span class="num"><b>' + gbp(total, 1) + '</b> <span class="muted">spent</span></span></div><div class="tablewrap"><table><thead><tr><th>Name</th><th>Whose</th><th class="r">Budget</th><th class="r">Running cost</th><th class="r">Budget left</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>';
+  const known = new Set(S.budgets.map(b => b.id)), isOther = e => !e.budgetId || !known.has(e.budgetId);
+  const oth = E.filter(isOther), othSum = sum(oth.map(e => e.amount));
+  const rowsAll = rows + (oth.length ? '<tr class="other-row"><td class="name">✳️ Other, not in a budget</td><td></td><td class="r"><span class="muted">None</span></td><td class="r">' + gbp(othSum, 1) + '</td><td class="r"></td></tr>' : "");
+  h += '<section class="card"><div class="row between"><h3>Running budgets</h3><span class="num"><b>' + gbp(total, 1) + '</b> <span class="muted">spent</span></span></div><div class="tablewrap"><table><thead><tr><th>Name</th><th>Whose</th><th class="r">Budget</th><th class="r">Running cost</th><th class="r">Budget left</th></tr></thead><tbody>' + rowsAll + '</tbody></table></div></section>';
+  { // what keeps turning up outside the budgets, over the last 3 months
+    const since = addM(ym, -2), groups = {};
+    S.expenses.filter(e => e.ym >= since && e.ym <= ym && isOther(e) && (ui.spendWho === "all" || e.who === ui.spendWho)).forEach(e => {
+      const k = (merchantKey(e.note) || String(e.note || "Unnamed").toUpperCase()).trim() || "UNNAMED";
+      const g = groups[k] || (groups[k] = { name: e.note || "Unnamed", total: 0, n: 0, months: new Set() });
+      g.total += +e.amount || 0; g.n++; g.months.add(e.ym);
+    });
+    const gl = Object.values(groups).sort((a, b) => b.total - a.total).slice(0, 6);
+    if (gl.length) h += '<section class="card"><div><h3>Outside your budgets</h3><p class="sub">Spending logged as Other over the last 3 months. If something keeps coming up, it probably deserves its own budget.</p></div><div class="list">'
+      + gl.map(g => '<div class="item"><div class="grow"><div class="t">' + esc(g.name) + '</div><div class="m">' + plural(g.n, "time") + ' in ' + plural(g.months.size, "month") + '</div></div><div class="amt num">' + gbp(g.total, 1) + '</div>' + (g.months.size >= 2 || g.n >= 3 ? '<button class="btn small" data-act="budfromother" data-v="' + esc(g.name) + '">Make a budget</button>' : "") + '</div>').join("") + '</div></section>';
+  }
   if (!E.length) return h + '<div class="empty">Nothing logged for ' + esc(ymLabel(ym)) + '. Tap Add spending to log a purchase.</div></div>';
   let cur = "", body = "";
   E.forEach(e => {
@@ -651,7 +777,7 @@ function vSpend() {
     const reacts = e.react ? Object.values(e.react).filter(Boolean).join("") : "";
     body += '<div class="srow" data-id="' + esc(e.id) + '"><div class="acts"><button class="e" data-act="editexp" data-id="' + esc(e.id) + '">Edit</button><button class="d" data-act="swdel" data-id="' + esc(e.id) + '">Delete</button></div><div class="sin"><div class="item" data-act="editexp" data-id="' + esc(e.id) + '" style="cursor:pointer">'
       + (b && b.emoji ? '<span class="emo">' + esc(b.emoji) + '</span>' : '<span class="dot ' + esc(e.who) + '"></span>')
-      + '<div class="grow"><div class="t">' + esc(e.note || (b ? b.name : "Spending")) + (reacts ? '<span class="react">' + esc(reacts) + '</span>' : "") + ((e.comments || []).length ? ' <span class="note">💬' + e.comments.length + '</span>' : "") + '</div><div class="m">' + esc((b ? b.name : "No budget") + " · from " + nm(e.who) + (by ? " · added by " + nm(by) : e.imported ? " · imported" : "")) + '</div></div><div class="amt num">' + gbp(e.amount, 1) + '</div></div></div></div>';
+      + '<div class="grow"><div class="t">' + esc(e.note || (b ? b.name : "Spending")) + (reacts ? '<span class="react">' + esc(reacts) + '</span>' : "") + ((e.comments || []).length ? ' <span class="note">💬' + e.comments.length + '</span>' : "") + '</div><div class="m">' + esc((b ? b.name : "Other") + " · from " + nm(e.who) + (by ? " · added by " + nm(by) : e.imported ? " · imported" : "")) + '</div></div><div class="amt num">' + gbp(e.amount, 1) + '</div></div></div></div>';
   });
   body += '</div>';
   return h + '<section class="card"><div class="row between"><h3>Every purchase</h3><span class="note">Swipe left to edit or delete</span></div>' + body + '</section></div>';
@@ -661,9 +787,9 @@ function vSpend() {
 function flowRow(i, ym, withTick) {
   const done = ticked(ym, i.key);
   const route = i.type === "in" ? "Into " + nm(i.to) : i.type === "move" ? nm(i.from) + " to Joint" : "From " + nm(i.from);
-  const kind = { in: "Income", move: "Transfer", bill: "Bill", sub: "Subscription", debt: "Debt payment", pot: "Saving" }[i.type];
+  const kind = { in: "Income", move: "Transfer", bill: "Bill", sub: "Subscription", debt: "Debt payment", pot: "Saving", due: "Upcoming cost" }[i.type];
   return '<div class="item' + (done ? " done" : "") + '"><div class="dayno"><b>' + i.day + '</b><span>' + esc(new Date(isoOf(ym, i.day) + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short" })) + '</span></div>'
-    + '<div class="grow"><div class="t">' + (i.emoji ? esc(i.emoji) + " " : "") + esc(i.label) + '</div><div class="flowto"><span class="dot ' + esc(i.type === "in" ? i.to : i.from) + '"></span><span>' + esc(route) + ' · ' + kind + (isManual(i) ? ", you move this" : i.type === "in" ? "" : ", automatic") + '</span></div></div>'
+    + '<div class="grow"><div class="t">' + (i.emoji ? esc(i.emoji) + " " : "") + esc(i.label) + '</div><div class="flowto"><span class="dot ' + esc(i.type === "in" ? i.to : i.from) + '"></span><span>' + esc(route) + ' · ' + kind + (isManual(i) ? ", you move this" : i.type === "in" ? "" : i.type === "due" ? ", paid from what you set aside" : ", automatic") + '</span></div></div>'
     + '<div class="amt num" style="color:' + (i.type === "in" ? "var(--good)" : "inherit") + '">' + (i.type === "in" ? "+" : "") + gbp(i.amount, 1) + '</div>'
     + (withTick !== false ? '<button class="tick' + (done ? " on" : "") + '" data-act="tick" data-ym="' + ym + '" data-k="' + esc(i.key) + '" aria-label="Mark as done">' + (done ? svg("check", 14) : "") + '</button>' : "") + '</div>';
 }
@@ -678,7 +804,7 @@ function vFlow() {
   }).join("") + '</div>';
   h += '<div class="section-head"><h2>Each account this month</h2></div><div class="grid g3">' + ["s", "m", "j"].map(k => {
     const x = c[k];
-    const lines = [["Comes in", x.income], ["Bills", x.bills], ["Subscriptions", x.subs], ["Debt payments", x.debts], ["Savings pots", x.pots], ["Yearly costs set aside", x.yearly], ["Budgets for spending", x.budgets]];
+    const lines = [["Comes in", x.income], ["Bills", x.bills], ["Subscriptions", x.subs], ["Debt payments", x.debts], ["Savings pots", x.pots], ["Upcoming costs set aside", x.yearly], ["Budgets for spending", x.budgets]];
     if (k !== "j") lines.splice(1, 0, ["To the joint account", x.joint]);
     return '<section class="card acct ' + k + '"><h3>' + esc(k === "j" ? "Joint account" : nm(k) + "’s account") + '</h3><div class="kv num">' + lines.map((l, i) => '<span class="' + (i ? "sub" : "") + '">' + l[0] + '</span><span>' + (i ? gbp(l[1], 1) : "+" + gbp(l[1], 1)) + '</span>').join("")
       + '<span class="tot">' + (x.left >= 0 ? "Left over" : "Short by") + '</span><span class="tot" style="color:' + (x.left < 0 ? "var(--bad)" : "inherit") + '">' + gbp(x.left, 1) + '</span></div></section>';
@@ -688,7 +814,7 @@ function vFlow() {
 }
 
 /* ---- plan ---- */
-const PLAN_TABS = [["income", "Income"], ["bills", "Bills"], ["subs", "Subscriptions"], ["debts", "Debt"], ["budgets", "Budgets"], ["pots", "Savings pots"], ["yearly", "Yearly costs"]];
+const PLAN_TABS = [["income", "Income"], ["bills", "Bills"], ["subs", "Subscriptions"], ["debts", "Debt"], ["budgets", "Budgets"], ["pots", "Savings pots"], ["yearly", "Upcoming costs"]];
 function vPlan() {
   const t = PLAN_TABS.some(x => x[0] === ui.sub) ? ui.sub : "income";
   let h = '<div class="stack"><div class="section-head"><h1>Plan</h1></div><div class="tabs">' + PLAN_TABS.map(x => '<a class="tab' + (t === x[0] ? " on" : "") + '" href="#plan/' + x[0] + '">' + x[1] + '</a>').join("") + '</div>';
@@ -713,41 +839,62 @@ function pIncome() {
   };
   return '<div class="grid g2">' + col("s") + col("m") + '</div>';
 }
-function tableCard(title, intro, head, rows, foot, c, addLabel) {
+const noteMark = x => x.notes ? '<span class="nmark" title="Has notes" aria-label="Has notes">' + svg("note", 14) + '</span>' : "";
+const handleCell = (c, id) => '<td class="hcell"><span class="grip" data-grip="' + c + '" aria-label="Drag to reorder" title="Drag to reorder">' + svg("grip", 16) + '</span></td>';
+const unsetPill = (c, id, f, label) => '<button class="unset" data-act="setfield" data-c="' + c + '" data-id="' + esc(id) + '" data-f="' + f + '" data-l="' + esc(label) + '">Not set</button>';
+function colsHidden(t) { try { return JSON.parse(LS.get("ms-cols-" + t) || "{}"); } catch (e) { return {}; } }
+function tableCard(title, intro, head, rows, foot, c, addLabel, opts) {
+  opts = opts || {};
+  const hid = colsHidden(c), css = [];
+  const th = head.map((x, i) => {
+    const key = x[2] && x[2].startsWith("x:") ? x[2].slice(2) : null, cls = (x[1] ? "r" : "") + (x[2] === "h" ? " hcell" : "");
+    if (key && hid[key]) { css.push(".tbl-" + c + " tr>:nth-child(" + (i + 1) + ")"); return '<th class="colx shut"><button class="colbtn" data-act="togglecol" data-t="' + c + '" data-k="' + key + '" title="Show ' + esc(x[0]) + '" aria-label="Show ' + esc(x[0]) + '">' + svg("plus", 13) + '<span>' + esc(x[0]) + '</span></button></th>'; }
+    if (key) return '<th class="colx ' + cls + '"><button class="colbtn" data-act="togglecol" data-t="' + c + '" data-k="' + key + '" title="Hide this column" aria-label="Hide ' + esc(x[0]) + '">' + esc(x[0]) + '<i>' + svg("minus", 12) + '</i></button></th>';
+    return '<th' + (cls ? ' class="' + cls.trim() + '"' : "") + '>' + x[0] + '</th>';
+  }).join("");
+  const style = css.length ? '<style>' + css.join(",") + '{width:30px;max-width:30px;padding-left:4px!important;padding-right:4px!important}' + css.map(x => x + ":not(th)").join(",") + '{font-size:0!important;color:transparent}' + css.map(x => x + ":not(th) *").join(",") + '{display:none}</style>' : "";
   return '<section class="card"><div><h2>' + title + '</h2>' + (intro ? '<p class="sub">' + intro + '</p>' : "") + '</div>'
-    + (rows ? '<div class="tablewrap"><table><thead><tr>' + head.map(x => '<th' + (x[1] ? ' class="r"' : "") + '>' + x[0] + '</th>').join("") + '</tr></thead><tbody>' + rows + '</tbody>' + (foot ? '<tfoot><tr>' + foot + '</tr></tfoot>' : "") + '</table></div>' : '<div class="empty">Nothing here yet.</div>')
+    + (rows ? style + '<div class="tablewrap"><table class="tbl-' + c + '"><thead><tr>' + th + '</tr></thead><tbody' + (opts.sort ? ' data-sort="' + opts.sort + '"' : "") + '>' + rows + '</tbody>' + (foot ? '<tfoot><tr>' + foot + '</tr></tfoot>' : "") + '</table></div>' + (opts.sort ? '<p class="note">Drag ' + svg("grip", 13) + ' to change the order. It changes on Home too, for both of you.</p>' : "") : '<div class="empty">Nothing here yet.</div>')
     + '<button class="addrow" data-act="new" data-c="' + c + '">+ ' + addLabel + '</button></section>';
 }
 const inrCell = (x, v) => x.inr && +st().fx.inr > 0 ? '<span class="sm">≈ ' + FI.format(v * st().fx.inr) + '</span>' : "";
 function pBills() {
-  const rows = S.bills.map(b => '<tr class="click" data-act="edit" data-c="bills" data-id="' + esc(b.id) + '"><td class="name">' + emo(b) + esc(b.name) + '</td><td class="r">' + gbp(b.cost, 1) + inrCell(b, +b.cost || 0) + '</td><td>' + whoTag(b.acct) + '</td><td>' + ordinal(b.day || 1) + ' of the month</td></tr>').join("");
-  return tableCard("Stable bills", "Standard monthly bills that don’t change often.", [["Name"], ["Cost", 1], ["Account going from"], ["Date of the bill"]], rows, '<td>Total</td><td class="r">' + gbp(sum(S.bills.map(b => b.cost)), 1) + '</td><td colspan="2"></td>', "bills", "Add a bill");
+  const rows = S.bills.map(b => '<tr class="click" data-act="edit" data-c="bills" data-id="' + esc(b.id) + '">' + handleCell("bills", b.id) + '<td class="name">' + emo(b) + esc(b.name) + noteMark(b) + '</td><td class="r">' + (+b.cost ? gbp(b.cost, 1) : unsetPill("bills", b.id, "cost", "Cost each month (£)")) + inrCell(b, +b.cost || 0) + '</td><td>' + whoTag(b.acct) + '</td><td>' + ordinal(b.day || 1) + ' of the month</td></tr>').join("");
+  return tableCard("Stable bills", "Standard monthly bills that don’t change often.", [["", 0, "h"], ["Name"], ["Cost", 1], ["Account going from"], ["Date of the bill"]], rows, '<td></td><td>Total</td><td class="r">' + gbp(sum(S.bills.map(b => b.cost)), 1) + '</td><td colspan="2"></td>', "bills", "Add a bill", { sort: "bills" });
 }
 function pSubs() {
-  const rows = S.subs.map(x => '<tr class="click" data-act="edit" data-c="subs" data-id="' + esc(x.id) + '"><td class="name">' + emo(x) + esc(x.name) + '</td><td class="r">' + gbp(x.cost, 1) + '</td><td>' + FREQ[x.freq || "monthly"] + '</td><td class="r">' + gbp(subMonthly(x), 1) + '</td><td>' + whoTag(x.who) + '</td><td>' + ordinal(x.day || 1) + (x.freq === "yearly" || x.freq === "quarterly" ? " " + monthName(x.month).slice(0, 3) : "") + '</td></tr>').join("");
-  return tableCard("Subscriptions", "", [["Name"], ["Cost", 1], ["Payment type"], ["Per month", 1], ["Whose"], ["Day charged"]], rows, '<td>Total</td><td></td><td></td><td class="r">' + gbp(sum(S.subs.map(subMonthly)), 1) + '</td><td colspan="2"></td>', "subs", "Add a subscription");
+  const rows = S.subs.map(x => '<tr class="click" data-act="edit" data-c="subs" data-id="' + esc(x.id) + '">' + handleCell("subs", x.id) + '<td class="name">' + emo(x) + esc(x.name) + noteMark(x) + '</td><td class="r">' + gbp(x.cost, 1) + '</td><td>' + FREQ[x.freq || "monthly"] + '</td><td class="r">' + gbp(subMonthly(x), 1) + '</td><td>' + whoTag(x.who) + '</td><td>' + ordinal(x.day || 1) + (x.freq === "yearly" || x.freq === "quarterly" ? " " + monthName(x.month).slice(0, 3) : "") + '</td></tr>').join("");
+  return tableCard("Subscriptions", "", [["", 0, "h"], ["Name"], ["Cost", 1], ["Payment type"], ["Per month", 1], ["Whose"], ["Day charged"]], rows, '<td></td><td>Total</td><td></td><td></td><td class="r">' + gbp(sum(S.subs.map(subMonthly)), 1) + '</td><td colspan="2"></td>', "subs", "Add a subscription", { sort: "subs" });
 }
 function pDebts() {
   const rows = S.debts.map(d => {
-    const inf = debtInfo(d);
-    return '<tr class="click" data-act="edit" data-c="debts" data-id="' + esc(d.id) + '"><td class="name">' + emo(d) + esc(d.name) + '</td><td>' + whoTag(d.who) + '</td><td class="r">' + (+d.borrowed ? gbp(d.borrowed, 1) : '<span class="muted">Not set</span>') + '</td><td class="r">' + (+d.apr || 0) + '%</td><td class="r">' + (inf.totalWithInterest != null ? gbp(inf.totalWithInterest, 1) : '<span class="muted">n/a</span>') + '</td><td class="r"><b>' + gbp(d.balance, 1) + '</b>' + inrCell(d, +d.balance || 0) + '</td><td class="r">' + gbp(d.monthly, 1) + '</td><td class="r">' + (inf.plan.done ? "Paid off" : inf.plan.months != null ? inf.plan.months : '<span class="muted">' + esc(inf.plan.reason) + '</span>') + '</td><td>' + (inf.finishISO ? dateLabel(inf.finishISO) : inf.plan.done ? "Done" : "") + '</td><td>' + (d.day ? ordinal(d.day) : "") + '</td><td class="r">' + gbp(+d.interestPaid || 0, 1) + '</td></tr>';
+    const inf = debtInfo(d), months = inf.plan.done ? "Paid off" : inf.plan.months != null ? inf.plan.months : (+d.monthly > 0 ? '<span class="unset static" title="' + esc(inf.plan.reason) + '">Too low</span>' : "");
+    return '<tr class="click" data-act="edit" data-c="debts" data-id="' + esc(d.id) + '">' + handleCell("debts", d.id) + '<td class="name">' + emo(d) + esc(d.name) + noteMark(d) + '</td><td>' + whoTag(d.who) + '</td>'
+      + '<td class="r">' + (+d.borrowed ? gbp(d.borrowed, 1) : unsetPill("debts", d.id, "borrowed", "Total amount borrowed (£)")) + '</td>'
+      + '<td class="r">' + (+d.apr || 0) + '%</td>'
+      + '<td class="r">' + (inf.totalWithInterest != null ? gbp(inf.totalWithInterest, 1) + (inf.totalIsEstimate ? '<span class="sm">estimate</span>' : "") : "") + '</td>'
+      + '<td class="r"><b>' + gbp(d.balance, 1) + '</b>' + inrCell(d, +d.balance || 0) + '</td>'
+      + '<td class="r">' + (+d.monthly > 0 || !debtActive(d) ? gbp(d.monthly, 1) : unsetPill("debts", d.id, "monthly", "Monthly repayment (£)")) + '</td>'
+      + '<td class="r">' + months + '</td><td>' + (inf.finishISO ? dateLabel(inf.finishISO) : inf.plan.done ? "Done" : "") + '</td><td>' + (d.day ? ordinal(d.day) : "") + '</td><td class="r">' + gbp(+d.interestPaid || 0, 1) + '</td></tr>';
   }).join("");
-  return tableCard("Debt", "Total left updates itself on the 1st of each month: the month’s interest is added and the repayment taken off.",
-    [["Name"], ["Whose"], ["Total borrowed", 1], ["Interest rate", 1], ["Total + interest", 1], ["Total left", 1], ["Monthly repayment", 1], ["Months left", 1], ["Date finished"], ["Paid on"], ["Interest paid to date", 1]],
-    rows, '<td>Total</td><td></td><td class="r">' + gbp(sum(S.debts.map(d => d.borrowed)), 1) + '</td><td></td><td></td><td class="r">' + gbp(sum(S.debts.map(d => d.balance)), 1) + '</td><td class="r">' + gbp(sum(S.debts.map(d => debtMonthly(d))), 1) + '</td><td colspan="3"></td><td class="r">' + gbp(sum(S.debts.map(d => +d.interestPaid || 0)), 1) + '</td>', "debts", "Add a debt");
+  return tableCard("Debt", "Total left updates itself on the 1st of each month: the month’s interest is added and the repayment taken off. Tap a column name to fold it away. Anything in pink still needs a number.",
+    [["", 0, "h"], ["Name"], ["Whose"], ["Total borrowed", 1, "x:borrowed"], ["Interest rate", 1, "x:apr"], ["Total + interest", 1, "x:total"], ["Total left", 1], ["Monthly repayment", 1], ["Months left", 1], ["Date finished"], ["Paid on"], ["Interest paid to date", 1]],
+    rows, '<td></td><td>Total</td><td></td><td class="r">' + gbp(sum(S.debts.map(d => d.borrowed)), 1) + '</td><td></td><td class="r">' + gbp(sum(S.debts.map(d => debtInfo(d).totalWithInterest || 0)), 1) + '</td><td class="r">' + gbp(sum(S.debts.map(d => d.balance)), 1) + '</td><td class="r">' + gbp(sum(S.debts.map(d => debtMonthly(d))), 1) + '</td><td colspan="3"></td><td class="r">' + gbp(sum(S.debts.map(d => +d.interestPaid || 0)), 1) + '</td>', "debts", "Add a debt", { sort: "debts" });
 }
 function pBudgets() {
   const ym = thisYM();
-  const rows = S.budgets.map(b => { const sp = budgetSpent(b, ym), a = +b.amount || 0; return '<tr class="click" data-act="edit" data-c="budgets" data-id="' + esc(b.id) + '"><td class="name">' + emo(b) + esc(b.name) + '</td><td>' + whoTag(b.who) + '</td><td class="r">' + gbp(a, 1) + '</td><td class="r">' + gbp(sp, 1) + '</td><td class="r" style="color:' + (sp > a ? "var(--bad)" : "inherit") + '">' + (sp > a ? gbp(sp - a, 1) + " over" : gbp(a - sp, 1)) + '</td></tr>'; }).join("");
-  return tableCard("Running budgets", "Spending money for " + esc(ymLabel(ym)) + ". Running cost comes from what you log, and resets on the 1st.", [["Name"], ["Whose"], ["Budget for this month", 1], ["Running cost", 1], ["Budget left", 1]], rows, '<td>Total</td><td></td><td class="r">' + gbp(sum(S.budgets.map(b => b.amount)), 1) + '</td><td class="r">' + gbp(sum(S.budgets.map(b => budgetSpent(b, ym))), 1) + '</td><td></td>', "budgets", "Add a budget");
+  const rows = S.budgets.map(b => { const sp = budgetSpent(b, ym), a = +b.amount || 0; return '<tr class="click" data-act="edit" data-c="budgets" data-id="' + esc(b.id) + '">' + handleCell("budgets", b.id) + '<td class="name">' + emo(b) + esc(b.name) + noteMark(b) + '</td><td>' + whoTag(b.who) + '</td><td class="r">' + (a ? gbp(a, 1) : unsetPill("budgets", b.id, "amount", "Budget for each month (£)")) + '</td><td class="r">' + gbp(sp, 1) + '</td><td class="r" style="color:' + (sp > a ? "var(--bad)" : "inherit") + '">' + (sp > a ? gbp(sp - a, 1) + " over" : gbp(a - sp, 1)) + '</td></tr>'; }).join("");
+  return tableCard("Running budgets", "Spending money for " + esc(ymLabel(ym)) + ". Running cost comes from what you log, and resets on the 1st.", [["", 0, "h"], ["Name"], ["Whose"], ["Budget for this month", 1], ["Running cost", 1], ["Budget left", 1]], rows, '<td></td><td>Total</td><td></td><td class="r">' + gbp(sum(S.budgets.map(b => b.amount)), 1) + '</td><td class="r">' + gbp(sum(S.budgets.map(b => budgetSpent(b, ym))), 1) + '</td><td></td>', "budgets", "Add a budget", { sort: "budgets" });
 }
 function pPots() {
-  const rows = S.pots.map(p => { const inf = potInfo(p); return '<tr class="click" data-act="edit" data-c="pots" data-id="' + esc(p.id) + '"><td class="name">' + emo(p) + esc(p.name) + '</td><td>' + whoTag(p.who) + '</td><td class="r">' + (inf.goal ? gbp(inf.goal, 1) : '<span class="muted">Not set</span>') + '</td><td class="r">' + gbp(p.monthly, 1) + '</td><td class="r">' + (inf.months === 0 ? "Reached" : inf.months != null ? inf.months : "") + '</td><td class="r"><b>' + gbp(inf.cur, 1) + '</b>' + inrCell(p, inf.cur) + '</td><td>' + (inf.iso ? dateLabel(inf.iso) : "") + '</td></tr>'; }).join("");
-  return tableCard("Savings pots", "The monthly commitment is added to each pot on the 1st, and stops when the goal is reached.", [["Name"], ["Whose"], ["Goal", 1], ["Monthly commitment", 1], ["Months left", 1], ["Current total", 1], ["Date achievable"]], rows, '<td>Total</td><td></td><td class="r">' + gbp(sum(S.pots.map(p => p.goal)), 1) + '</td><td class="r">' + gbp(sum(S.pots.map(p => potMonthly(p))), 1) + '</td><td></td><td class="r">' + gbp(sum(S.pots.map(p => p.current)), 1) + '</td><td></td>', "pots", "Add a savings pot");
+  const rows = S.pots.map(p => { const inf = potInfo(p); return '<tr class="click" data-act="edit" data-c="pots" data-id="' + esc(p.id) + '">' + handleCell("pots", p.id) + '<td class="name">' + emo(p) + esc(p.name) + noteMark(p) + '</td><td>' + whoTag(p.who) + '</td><td class="r">' + (inf.goal ? gbp(inf.goal, 1) : unsetPill("pots", p.id, "goal", "Goal (£)")) + '</td><td class="r">' + (+p.monthly > 0 || (inf.goal && inf.remaining <= 0) ? gbp(p.monthly, 1) : unsetPill("pots", p.id, "monthly", "Monthly commitment (£)")) + '</td><td class="r">' + (inf.months === 0 ? "Reached" : inf.months != null ? inf.months : "") + '</td><td class="r"><b>' + gbp(inf.cur, 1) + '</b>' + inrCell(p, inf.cur) + '</td><td>' + (inf.iso ? dateLabel(inf.iso) : "") + '</td></tr>'; }).join("");
+  return tableCard("Savings pots", "The monthly commitment is added to each pot on the 1st, and stops when the goal is reached.", [["", 0, "h"], ["Name"], ["Whose"], ["Goal", 1], ["Monthly commitment", 1], ["Months left", 1], ["Current total", 1], ["Date achievable"]], rows, '<td></td><td>Total</td><td></td><td class="r">' + gbp(sum(S.pots.map(p => p.goal)), 1) + '</td><td class="r">' + gbp(sum(S.pots.map(p => potMonthly(p))), 1) + '</td><td></td><td class="r">' + gbp(sum(S.pots.map(p => p.current)), 1) + '</td><td></td>', "pots", "Add a savings pot", { sort: "pots" });
 }
 function pYearly() {
-  const rows = S.yearly.map(y => '<tr class="click" data-act="edit" data-c="yearly" data-id="' + esc(y.id) + '"><td class="name">' + emo(y) + esc(y.name) + '</td><td>' + whoTag(y.who) + '</td><td class="r">' + gbp(y.amount, 1) + inrCell(y, +y.amount || 0) + '</td><td>' + monthName(y.month) + '</td><td class="r">' + gbp(yearlyMonthly(y), 1) + '</td><td class="r"><b>' + gbp(+y.saved || 0, 1) + '</b></td></tr>').join("");
-  return tableCard("Yearly costs", "Christmas, MOT, TV licence, birthdays. A twelfth is set aside every month, so they’re covered when they come round. The saved amount resets after the month it’s due.", [["Name"], ["Whose"], ["Cost", 1], ["Due in"], ["Set aside monthly", 1], ["Saved so far", 1]], rows, '<td>Total</td><td></td><td class="r">' + gbp(sum(S.yearly.map(y => y.amount)), 1) + '</td><td></td><td class="r">' + gbp(sum(S.yearly.map(yearlyMonthly)), 1) + '</td><td class="r">' + gbp(sum(S.yearly.map(y => +y.saved || 0)), 1) + '</td>', "yearly", "Add a yearly cost");
+  const ym = thisYM(), list = S.yearly.slice().sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || byOrder(a, b));
+  const rows = list.map(y => { const due = dueYM(y), n = monthsBetween(ym, due);
+    return '<tr class="click' + (y.done ? " done" : "") + '" data-act="edit" data-c="yearly" data-id="' + esc(y.id) + '">' + handleCell("yearly", y.id) + '<td class="name">' + emo(y) + esc(y.name) + noteMark(y) + '</td><td>' + whoTag(y.who) + '</td><td class="r">' + (+y.amount ? gbp(y.amount, 1) : unsetPill("yearly", y.id, "amount", "Estimated cost (£)")) + inrCell(y, +y.amount || 0) + '</td><td>' + (y.done ? "Paid" : isOnce(y) ? esc(ymLabel(due)) : "Every " + monthName(y.month)) + '</td><td class="r">' + (y.done ? "" : n <= 0 ? "This month" : plural(n, "month")) + '</td><td class="r">' + gbp(yearlyMonthly(y), 1) + '</td><td class="r"><b>' + gbp(+y.saved || 0, 1) + '</b></td></tr>'; }).join("");
+  return tableCard("Upcoming costs", "Things you know are coming: MOT, car service, Christmas, a visa fee, flights. Add a rough cost and when it lands, and the right amount is set aside each month so that month isn’t a shock. Set it to repeat every year, or just once.", [["", 0, "h"], ["Name"], ["Whose"], ["Estimated cost", 1], ["Due"], ["Months away", 1], ["Set aside monthly", 1], ["Saved so far", 1]], rows, '<td></td><td>Total</td><td></td><td class="r">' + gbp(sum(S.yearly.filter(y => !y.done).map(y => y.amount)), 1) + '</td><td></td><td></td><td class="r">' + gbp(sum(S.yearly.map(y => yearlyMonthly(y))), 1) + '</td><td class="r">' + gbp(sum(S.yearly.map(y => +y.saved || 0)), 1) + '</td>', "yearly", "Add an upcoming cost", { sort: "yearly" });
 }
 
 /* ---- insights ---- */
@@ -943,6 +1090,8 @@ function readCSV(file) {
 function vSettings() {
   const s = st(), sh = jointShares(), need = jointNeed();
   let h = '<div class="stack"><div class="section-head"><h1>Settings</h1></div>';
+  const th = LS.get("ms-theme") || "paper";
+  h += '<section class="card"><h2>Look</h2><p class="sub">Just for this phone or computer. The other person keeps their own choice.</p><div class="chips">' + [["paper", "Paper, light and calm"], ["night", "Night, dark and bold"], ["auto", "Match my phone"]].map(o => '<button class="chip' + (th === o[0] ? " on" : "") + '" data-act="theme" data-v="' + o[0] + '">' + o[1] + '</button>').join("") + '</div></section>';
   h += '<section class="card" data-keep><h2>The two of you</h2><div class="fgrid">'
     + PEOPLE.map(p => '<label class="field">Name<input id="nm-' + p + '" value="' + esc(s.names[p]) + '"></label><label class="field">Pay day<input id="pd-' + p + '" inputmode="numeric" value="' + s.payday[p] + '"></label><label class="field full">' + esc(nm(p)) + '’s sign in email<input id="em-' + p + '" type="email" value="' + esc(s.emails[p] || "") + '" placeholder="Used to greet you and show who added what"></label>').join("")
     + '</div><button class="btn primary" data-act="savepeople" style="align-self:flex-start">Save</button></section>';
@@ -968,12 +1117,12 @@ function vSettings() {
 
 /* ================= sheets ================= */
 const FORMS = {
-  bills: { title: "bill", fields: [["name", "Name", "text", "Council tax"], ["cost", "Cost each month (£)", "money"], ["acct", "Account going from", "who"], ["day", "Day of the month it goes out", "day"], ["emoji", "Icon", "emoji"], ["inr", "Show in rupees too", "check"]] },
-  subs: { title: "subscription", fields: [["name", "Name", "text", "Spotify"], ["cost", "Cost each time (£)", "money"], ["freq", "Payment type", "freq"], ["who", "Whose", "who"], ["day", "Day charged", "day"], ["month", "Month charged (yearly or quarterly)", "month"], ["emoji", "Icon", "emoji"]] },
-  debts: { title: "debt", fields: [["name", "Name", "text", "Barclays loan"], ["who", "Whose", "who"], ["borrowed", "Total amount borrowed (£)", "money"], ["apr", "Interest rate (APR %)", "pct"], ["balance", "Total left today (£)", "money"], ["monthly", "Monthly repayment (£)", "money"], ["day", "Day it’s paid", "day"], ["interestPaid", "Interest paid to date (£)", "money"], ["emoji", "Icon", "emoji"], ["color", "Colour", "color"], ["inr", "Show in rupees too", "check"]] },
-  budgets: { title: "budget", fields: [["name", "Name", "text", "Food"], ["who", "Whose", "who"], ["amount", "Budget for each month (£)", "money"], ["emoji", "Icon", "emoji"], ["color", "Colour", "color"]] },
-  pots: { title: "savings pot", fields: [["name", "Name", "text", "Holiday"], ["who", "Whose", "who"], ["goal", "Goal (£)", "money"], ["monthly", "Monthly commitment (£)", "money"], ["current", "Current total (£)", "money"], ["day", "Day you pay in", "day"], ["emoji", "Icon", "emoji"], ["color", "Colour", "color"], ["inr", "Show in rupees too", "check"]] },
-  yearly: { title: "yearly cost", fields: [["name", "Name", "text", "Christmas"], ["who", "Whose", "who"], ["amount", "Cost each year (£)", "money"], ["month", "Month it’s due", "month"], ["saved", "Set aside so far (£)", "money"], ["emoji", "Icon", "emoji"], ["inr", "Show in rupees too", "check"]] },
+  bills: { title: "bill", fields: [["name", "Name", "text", "Council tax"], ["cost", "Cost each month (£)", "money"], ["acct", "Account going from", "who"], ["day", "Day of the month it goes out", "day"], ["emoji", "Icon", "emoji"], ["inr", "Show in rupees too", "check"], ["notes", "Notes", "notes"]] },
+  subs: { title: "subscription", fields: [["name", "Name", "text", "Spotify"], ["cost", "Cost each time (£)", "money"], ["freq", "Payment type", "freq"], ["who", "Whose", "who"], ["day", "Day charged", "day"], ["month", "Month charged (yearly or quarterly)", "month"], ["emoji", "Icon", "emoji"], ["notes", "Notes", "notes"]] },
+  debts: { title: "debt", fields: [["name", "Name", "text", "Barclays loan"], ["who", "Whose", "who"], ["borrowed", "Total amount borrowed (£)", "money"], ["apr", "Interest rate (APR %)", "pct"], ["balance", "Total left today (£)", "money"], ["monthly", "Monthly repayment (£)", "money"], ["day", "Day it’s paid", "day"], ["interestPaid", "Interest paid to date (£)", "money"], ["emoji", "Icon", "emoji"], ["color", "Colour", "color"], ["inr", "Show in rupees too", "check"], ["notes", "Notes", "notes"]] },
+  budgets: { title: "budget", fields: [["name", "Name", "text", "Food"], ["who", "Whose", "who"], ["amount", "Budget for each month (£)", "money"], ["emoji", "Icon", "emoji"], ["color", "Colour", "color"], ["notes", "Notes", "notes"]] },
+  pots: { title: "savings pot", fields: [["name", "Name", "text", "Holiday"], ["who", "Whose", "who"], ["goal", "Goal (£)", "money"], ["monthly", "Monthly commitment (£)", "money"], ["current", "Current total (£)", "money"], ["day", "Day you pay in", "day"], ["emoji", "Icon", "emoji"], ["color", "Colour", "color"], ["inr", "Show in rupees too", "check"], ["notes", "Notes", "notes"]] },
+  yearly: { title: "upcoming cost", fields: [["name", "Name", "text", "MOT and service"], ["who", "Whose", "who"], ["amount", "Estimated cost (£)", "money"], ["repeat", "How often", "repeat"], ["month", "Month it’s due", "month"], ["year", "Year", "year"], ["saved", "Set aside so far (£)", "money"], ["emoji", "Icon", "emoji"], ["inr", "Show in rupees too", "check"], ["notes", "Notes", "notes"]] },
   assets: { title: "pension, investment or account", fields: [["name", "Name", "text", "Workplace pension"], ["who", "Whose", "who"], ["kind", "Type", "kind"], ["value", "Value today (£)", "money"], ["monthly", "Added each month (£)", "money"], ["growth", "Expected growth a year (%)", "pct"], ["autoAdd", "Add the monthly amount automatically on the 1st", "check"], ["emoji", "Icon", "emoji"]] },
   challenges: { title: "challenge", fields: [["name", "Name", "text", "No takeaway week"], ["kind", "Type", "chalkind"], ["budgetId", "Which budget", "budget"], ["limit", "Spend no more than (£)", "money"], ["days", "How many days", "day"], ["start", "Starts", "date"], ["emoji", "Icon", "emoji"]] }
 };
@@ -987,6 +1136,9 @@ function fieldHTML(f, v) {
   if (type === "chalkind") return '<label class="field">' + label + '<select id="' + id + '"><option value="nospend"' + (v !== "under" ? " selected" : "") + '>Spend nothing</option><option value="under"' + (v === "under" ? " selected" : "") + '>Stay under an amount</option></select></label>';
   if (type === "budget") return '<label class="field">' + label + '<select id="' + id + '"><option value="">All spending</option>' + S.budgets.map(b => '<option value="' + esc(b.id) + '"' + (v === b.id ? " selected" : "") + '>' + esc((b.emoji ? b.emoji + " " : "") + b.name) + '</option>').join("") + '</select></label>';
   if (type === "month") return '<label class="field">' + label + '<select id="' + id + '">' + Array.from({ length: 12 }, (_, i) => '<option value="' + (i + 1) + '"' + (+v === i + 1 ? " selected" : "") + '>' + monthName(i + 1) + '</option>').join("") + '</select></label>';
+  if (type === "notes") return '<label class="field full">' + label + '<textarea id="' + id + '" rows="3" placeholder="Anything worth remembering. Only shown here, not in the tables.">' + esc(v || "") + '</textarea></label>';
+  if (type === "repeat") return '<label class="field">' + label + '<select id="' + id + '" data-act-change="syncrepeat"><option value="yearly"' + (v !== "once" ? " selected" : "") + '>Every year</option><option value="once"' + (v === "once" ? " selected" : "") + '>Just once</option></select></label>';
+  if (type === "year") { const y0 = new Date().getFullYear(); return '<label class="field">' + label + '<select id="' + id + '">' + Array.from({ length: 6 }, (_, i) => y0 + i).map(y => '<option value="' + y + '"' + ((+v || y0) === y ? " selected" : "") + '>' + y + '</option>').join("") + '</select></label>'; }
   if (type === "date") return '<label class="field">' + label + '<input type="date" id="' + id + '" value="' + esc(v || todayISO()) + '"></label>';
   if (type === "check") return '<label class="checkrow full"><input type="checkbox" id="' + id + '"' + (v ? " checked" : "") + '> ' + label + '</label>';
   if (type === "emoji") return '<div class="field full">' + label + '<input type="hidden" id="' + id + '" value="' + esc(v || "") + '"><div class="emogrid" data-pick="' + id + '"><button type="button" data-act="pickemo" data-v=""' + (!v ? ' class="on"' : "") + ' aria-label="No icon">∅</button>' + EMOJIS.map(e => '<button type="button" data-act="pickemo" data-v="' + e + '"' + (v === e ? ' class="on"' : "") + '>' + e + '</button>').join("") + '</div></div>';
@@ -997,7 +1149,7 @@ function fieldHTML(f, v) {
 function openItem(c, id, preset) {
   const F = FORMS[c], it = id ? S[c].find(x => x.id === id) : null;
   ui.sheet = { c, id };
-  const defaults = Object.assign({ who: me() || "j", acct: "j", freq: "monthly", day: c === "challenges" ? 7 : 1, month: new Date().getMonth() + 1, kind: c === "challenges" ? "nospend" : "savings", autoAdd: true, start: todayISO() }, preset || {});
+  const defaults = Object.assign({ repeat: "yearly", year: new Date().getFullYear(), who: me() || "j", acct: "j", freq: "monthly", day: c === "challenges" ? 7 : 1, month: new Date().getMonth() + 1, kind: c === "challenges" ? "nospend" : "savings", autoAdd: true, start: todayISO() }, preset || {});
   let h = '<h2>' + (it ? "Edit " : "Add a ") + F.title + '</h2>';
   if (c === "challenges" && !it) h += '<div class="quick">' + [["🥡", "No takeaway week", "nospend", /eat|takeaway/i, 7, 0], ["🛒", "£50 food shop week", "under", /groc|food/i, 7, 50], ["🛍️", "No spend weekend", "nospend", null, 2, 0], ["☕", "No coffee out for 2 weeks", "nospend", /eat|coffee/i, 14, 0]].map((t, i) => '<button type="button" class="qbtn" data-act="chaltpl" data-v="' + i + '"><b>' + t[0] + ' ' + esc(t[1]) + '</b>' + plural(t[4], "day") + '</button>').join("") + '</div>';
   h += '<form id="itemForm" class="fgrid">' + F.fields.map(f => fieldHTML(f, it ? it[f[0]] : defaults[f[0]])).join("") + '</form>';
@@ -1006,13 +1158,15 @@ function openItem(c, id, preset) {
   h += '<div class="actions">' + (it ? '<button class="btn ghost danger" data-act="del" style="margin-right:auto">Delete</button>' : "") + '<button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="saveitem">' + (it ? "Save changes" : "Add " + F.title) + '</button></div>';
   openSheet(h);
   if (c === "challenges") syncChalForm();
+  if (c === "yearly") syncRepeat();
 }
+function syncRepeat() { const r = $("#f-repeat"), y = $("#f-year"); if (r && y) y.closest(".field").hidden = r.value !== "once"; }
 function syncChalForm() { const k = $("#f-kind"); const l = $("#f-limit"); if (k && l) l.closest(".field").hidden = k.value !== "under"; }
 async function saveItem() {
   const { c, id } = ui.sheet, F = FORMS[c], d = {};
   for (const [k, , type] of F.fields) {
     const el = $("#f-" + k); if (!el) continue;
-    d[k] = type === "text" ? el.value.trim() : ["who", "freq", "kind", "chalkind", "budget", "date", "emoji", "color"].includes(type) ? el.value : type === "check" ? el.checked : type === "day" ? Math.max(1, Math.min(c === "challenges" ? 90 : 31, parseInt(el.value, 10) || 1)) : type === "month" ? +el.value : num(el.value);
+    d[k] = type === "text" || type === "notes" ? el.value.trim() : ["who", "freq", "kind", "chalkind", "budget", "date", "emoji", "color", "repeat"].includes(type) ? el.value : type === "year" ? +el.value : type === "check" ? el.checked : type === "day" ? Math.max(1, Math.min(c === "challenges" ? 90 : 31, parseInt(el.value, 10) || 1)) : type === "month" ? +el.value : num(el.value);
   }
   if (!d.name) { toast("Give it a name"); $("#f-name").focus(); return; }
   try {
@@ -1028,7 +1182,7 @@ async function saveItem() {
 function openExpense(id, budgetId) {
   const e = id ? S.expenses.find(x => x.id === id) : null;
   const myWho = me() || "m";
-  const b0 = e ? e.budgetId : budgetId || (S.budgets[0] || {}).id;
+  const b0 = e ? (e.budgetId || "") : budgetId != null ? budgetId : (S.budgets[0] || {}).id || "";
   const bud = S.budgets.find(b => b.id === b0);
   ui.sheet = { exp: true, id, budgetId: b0, who: e ? e.who : (bud && bud.who !== "j" ? bud.who : myWho), amt: e ? String(e.amount) : "" };
   const quick = !e ? frequentShortcuts() : [];
@@ -1048,7 +1202,8 @@ function openExpense(id, budgetId) {
   openSheet(h);
 }
 const amtHTML = () => '<span>£</span>' + esc(ui.sheet.amt || "0");
-const budChips = () => S.budgets.map(b => '<button type="button" class="chip' + (ui.sheet.budgetId === b.id ? " on" : "") + '" data-act="xbud" data-v="' + esc(b.id) + '">' + (b.emoji ? esc(b.emoji) : '<span class="dot ' + esc(b.who) + '"></span>') + esc(b.name) + '</button>').join("") || '<span class="note">Add a budget in Plan first.</span>';
+const budChips = () => S.budgets.map(b => '<button type="button" class="chip' + (ui.sheet.budgetId === b.id ? " on" : "") + '" data-act="xbud" data-v="' + esc(b.id) + '">' + (b.emoji ? esc(b.emoji) : '<span class="dot ' + esc(b.who) + '"></span>') + esc(b.name) + '</button>').join("")
+  + '<button type="button" class="chip other' + (!ui.sheet.budgetId ? " on" : "") + '" data-act="xbud" data-v="">✳️ Other, not in a budget</button>';
 const whoChips = () => WHO.map(k => '<button type="button" class="chip' + (ui.sheet.who === k ? " on" : "") + '" data-act="xwho" data-v="' + k + '"><span class="dot ' + k + '"></span>' + esc(nm(k)) + '</button>').join("");
 function padPress(k) {
   let a = ui.sheet.amt || "";
@@ -1060,6 +1215,7 @@ function padPress(k) {
 async function saveExpense() {
   const amount = num(ui.sheet.amt);
   if (amount <= 0) { toast("Type an amount on the number pad"); return; }
+  if (!ui.sheet.budgetId && !$("#x-note").value.trim()) { toast("Say what it was, so Other spending shows what you might need a budget for"); $("#x-note").focus(); return; }
   const date = $("#x-date").value || todayISO();
   const old = ui.sheet.id ? S.expenses.find(x => x.id === ui.sheet.id) : null;
   const d = Object.assign({}, old || {}, { amount, budgetId: ui.sheet.budgetId || "", who: ui.sheet.who, date, ym: date.slice(0, 7), note: $("#x-note").value.trim() });
@@ -1167,12 +1323,21 @@ function fail(e) { console.error(e); toast(e && e.code === "permission-denied" ?
 async function onAct(el) {
   const a = el.dataset.act, v = el.dataset.v, id = el.dataset.id;
   if (ui.justSwiped && Date.now() - ui.justSwiped < 350 && a === "editexp" && el.classList.contains("item")) return;
+  if (justDragged && Date.now() - justDragged < 400) return;
+  if (ui.arrange && el.closest("[data-sort]") && a !== "arrange") return;
   switch (a) {
+    case "theme": LS.set("ms-theme", v); applyTheme(); ui.keepScroll = true; render(); break;
+    case "togglecol": { const t = el.dataset.t, k = el.dataset.k, h = colsHidden(t); h[k] = !h[k]; LS.set("ms-cols-" + t, JSON.stringify(h)); ui.keepScroll = true; render(); break; }
+    case "setfield": openPop(el); break;
+    case "popsave": savePop(); break;
+    case "popclose": closePop(); break;
+    case "arrange": ui.arrange = !ui.arrange; ui.keepScroll = true; render(); if (ui.arrange) toast("Drag the cards into the order you like, then tap Done"); break;
+    case "budfromother": openItem("budgets", null, { name: v }); break;
     case "addexp": openExpense(); break;
     case "openbudget": openExpense(null, id); break;
     case "editexp": openExpense(id); break;
     case "padkey": padPress(v); break;
-    case "xbud": ui.sheet.budgetId = v; { const b = S.budgets.find(x => x.id === v); if (b && b.who !== "j") ui.sheet.who = b.who; } $("#x-buds").innerHTML = budChips(); $("#x-who").innerHTML = whoChips(); break;
+    case "xbud": ui.sheet.budgetId = v; { const b = S.budgets.find(x => x.id === v); if (b && b.who !== "j") ui.sheet.who = b.who; } $("#x-buds").innerHTML = budChips(); $("#x-who").innerHTML = whoChips(); if (!v) { const n = $("#x-note"); n.placeholder = "What was it? e.g. Haircut, parking, vet"; } break;
     case "xwho": ui.sheet.who = v; $("#x-who").innerHTML = whoChips(); break;
     case "saveexp": saveExpense(); break;
     case "quick": {
@@ -1323,6 +1488,7 @@ document.addEventListener("change", e => {
   else if (t.dataset.csvon != null) { ui.csv.rows[+t.dataset.csvon].on = t.checked; ui.keepScroll = true; render(); }
   else if (t.dataset.csvbud != null) { const r = ui.csv.rows[+t.dataset.csvbud]; r.budgetId = t.value; r.guess = t.value ? "You chose" : ""; }
   else if (t.id === "f-kind" && ui.sheet && ui.sheet.c === "challenges") syncChalForm();
+  else if (t.id === "f-repeat") syncRepeat();
   else if (t.dataset.fx) { t.blur(); ui.keepScroll = true; render(); }
 });
 document.addEventListener("input", e => {
@@ -1353,7 +1519,7 @@ function route() {
   const h = (location.hash || "#home").slice(1).split("/");
   ui.route = ["home", "spend", "flow", "plan", "insights", "statement", "settings", "import"].includes(h[0]) ? h[0] : (h[0] === "statements" ? "insights" : "home");
   ui.sub = h[0] === "statements" ? "statements" : (h[1] || "");
-  ui.animate = true;
+  ui.animate = true; ui.arrange = false; closePop();
   transition(() => { closeSheet(); window.scrollTo(0, 0); if (rq) { cancelAnimationFrame(rq); rq = 0; } draw(); });
 }
 window.addEventListener("hashchange", route);

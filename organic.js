@@ -72,7 +72,7 @@ export function pebble(opts) {
     + '<g clip-path="url(#' + id + ')">' + waves + '</g>'
     + blobEl(seed, cx, cy, R, amp, 'fill="none" stroke="var(--line2)" stroke-width="1.5"')
     + (hasE ? '<text x="56" y="44" text-anchor="middle" font-size="18">' + esc(opts.emoji) + '</text>' : "")
-    + '<text x="56" y="' + (hasE ? 66 : (opts.sub ? 56 : 62)) + '" text-anchor="middle" font-family="Big Shoulders Display, Impact, sans-serif" font-weight="900" font-size="' + (hasE ? 21 : 24) + '" fill="var(--ink)" ' + txt + '>' + esc(opts.centre) + '</text>'
+    + '<text x="56" y="' + (hasE ? 66 : (opts.sub ? 56 : 62)) + '" text-anchor="middle" class="pv" font-size="' + (hasE ? 21 : 24) + '" fill="var(--ink)" ' + txt + '>' + esc(opts.centre) + '</text>'
     + (opts.sub ? '<text x="56" y="' + (hasE ? 80 : 73) + '" text-anchor="middle" font-size="11" font-weight="600" fill="var(--ink2)" ' + txt + '>' + esc(opts.sub) + '</text>' : "") + '</svg>';
 }
 
@@ -97,15 +97,15 @@ export function token(color, emoji, state, seedStr) {
 export function mark(cls, style) {
   return '<svg class="' + (cls || "mark") + '"' + (style ? ' style="' + style + '"' : "") + ' viewBox="0 0 40 40" aria-hidden="true">'
     + blobEl(11, 20, 20, 18.5, .07, 'fill="var(--lime)"', 0, .5)
-    + blobEl(21, 15.5, 20, 8.6, .14, 'fill="var(--peri)" stroke="#15162b" stroke-width="2.2"', 0, 1.3)
-    + blobEl(37, 24.5, 20, 8.6, .14, 'fill="var(--pink)" stroke="#15162b" stroke-width="2.2" style="mix-blend-mode:multiply"', 0, 1.1) + '</svg>';
+    + blobEl(21, 15.5, 20, 8.6, .14, 'fill="var(--peri)" stroke="var(--dark)" stroke-width="2.2"', 0, 1.3)
+    + blobEl(37, 24.5, 20, 8.6, .14, 'fill="var(--pink)" stroke="var(--dark)" stroke-width="2.2" style="mix-blend-mode:multiply"', 0, 1.1) + '</svg>';
 }
 
 /* Flowing lines (replace the static squiggle). */
 export function ribbons(cls) {
   return '<svg class="' + (cls || "squig") + '" viewBox="0 0 170 70" aria-hidden="true" preserveAspectRatio="none">'
-    + '<path data-line="0" data-g="170,34,18,1.6,1" fill="none" stroke="#f2652f" stroke-width="4" stroke-linecap="round"/>'
-    + '<path data-line="2" data-g="170,52,8,1.1,.7" fill="none" stroke="#2b2f73" stroke-width="3" stroke-linecap="round"/></svg>';
+    + '<path data-line="0" data-g="170,34,18,1.6,1" fill="none" style="stroke:var(--rib1)" stroke-width="4" stroke-linecap="round"/>'
+    + '<path data-line="2" data-g="170,52,8,1.1,.7" fill="none" style="stroke:var(--rib2)" stroke-width="3" stroke-linecap="round"/></svg>';
 }
 function lineD(w, y, A, k, t, ph) {
   let d = "";
@@ -198,6 +198,6 @@ export function backdrop() {
   if (document.getElementById("organic-bg")) return;
   const d = document.createElement("div"); d.id = "organic-bg"; d.setAttribute("aria-hidden", "true");
   d.innerHTML = ["lime", "pink", "peri", "orange"].map((c, i) => '<svg class="ob ob' + i + '" viewBox="0 0 200 200">' + blobEl(hash("bg" + i), 100, 100, 80, .2, 'fill="url(#og-' + c + ')"', 0, .25 + i * .07) + '</svg>').join("")
-    + '<svg width="0" height="0" style="position:absolute"><defs>' + [["lime", "#d9f15a"], ["pink", "#f6a9cf"], ["peri", "#8f9bf5"], ["orange", "#f2652f"]].map(([k, v]) => '<radialGradient id="og-' + k + '"><stop offset="0" stop-color="' + v + '" stop-opacity=".55"/><stop offset="1" stop-color="' + v + '" stop-opacity="0"/></radialGradient>').join("") + '</defs></svg>';
+    + '<svg width="0" height="0" style="position:absolute"><defs>' + ["lime", "pink", "peri", "orange"].map((k, i) => '<radialGradient id="og-' + k + '"><stop offset="0" style="stop-color:var(--ob' + i + ');stop-opacity:.6"/><stop offset="1" style="stop-color:var(--ob' + i + ');stop-opacity:0"/></radialGradient>').join("") + '</defs></svg>';
   document.body.prepend(d);
 }
