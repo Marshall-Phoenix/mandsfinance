@@ -1,6 +1,7 @@
 import { firebaseConfig } from "./config.js";
 import { demoData } from "./demo.js";
-import { pebble, flower, token, mark, ribbons, scan, transition, backdrop, blobD, hash } from "./organic.js";
+import { pebble, mark, contours, smoothPath, scan, transition, backdrop, blobD, hash } from "./organic.js";
+import { mountChrome, tilt } from "./chrome.js";
 
 /* ================= helpers ================= */
 const $ = s => document.querySelector(s);
@@ -55,7 +56,6 @@ const ICON = {
 };
 const svg = (k, size) => '<svg viewBox="0 0 24 24" width="' + (size || 22) + '" height="' + (size || 22) + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
 const MARK = mark();
-const SQUIG = ribbons();
 
 /* ================= state ================= */
 const S = {
@@ -489,10 +489,11 @@ function countUp() {
 }
 
 function applyTheme() {
-  let t = LS.get("ms-theme") || "paper";
-  if (t === "auto") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "paper";
+  let t = LS.get("ms-theme") || "chrome";
+  if (t === "night") t = "chrome";
+  if (t === "auto") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "chrome" : "paper";
   document.documentElement.dataset.theme = t;
-  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = t === "night" ? "#0f1020" : "#f3f0e9";
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = t === "chrome" ? "#050507" : "#f3f0e9";
 }
 applyTheme();
 if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
@@ -594,6 +595,10 @@ function draw() {
   if (ui.animate) Array.from(app.querySelectorAll(".main > *, .bento > *, .rings > *, .people > *, .challenge-row > *")).forEach((el, i) => el.style.setProperty("--i", Math.min(i, 14)));
   placeNav();
   scan(app);
+  app.querySelectorAll(".tile,.ptile,.ring,.chip-c,.up,.recapbar").forEach(el => el.classList.add("tilt"));
+  tilt(app);
+  const hero = app.querySelector(".b-hero");
+  if (hero && document.documentElement.dataset.theme === "chrome") { if (mountChrome(hero, ui.hero)) hero.classList.add("has3d"); }
   if (ui.animate) { countUp(); setTimeout(() => app.classList.remove("anim"), 1100); }
   ui.animate = false;
   if (ui.keepScroll) window.scrollTo(0, y);
@@ -667,18 +672,19 @@ function vHome() {
   h += '<div class="bento">';
   // hero
   const perDay = Math.max(0, safe.perDay);
-  h += '<section class="tile t-lime b-hero">' + flower(String(safe.daysLeft), safe.daysLeft === 1 ? "day left" : "days left", "var(--badge-bg)", "var(--badge-ink)", "days" + ym) + SQUIG
+  ui.hero = { fill: safe.total > 0 ? Math.max(0, safe.left) / safe.total : .5, warm: safe.left < 0 };
+  h += '<section class="tile t-lime b-hero">' + contours("hero" + ym, "contours hero-c", 9) 
     + (S.budgets.length
-      ? '<span class="k">Safe to spend today</span><span class="huge num' + (safe.perDay < 0 ? " neg" : "") + '" data-count="' + perDay.toFixed(0) + '">' + gbp(perDay) + '</span>'
+      ? '<div class="herohead"><span class="k">Safe to spend today</span><span class="daysleft"><b>' + safe.daysLeft + '</b> ' + (safe.daysLeft === 1 ? "day" : "days") + ' left in ' + esc(ymLabel(ym).split(" ")[0]) + '</span></div>' + '<span class="huge num' + (safe.perDay < 0 ? " neg" : "") + '" data-count="' + perDay.toFixed(0) + '">' + gbp(perDay) + '</span>'
         + '<p class="subl">' + (safe.left >= 0 ? gbp(safe.left) + ' left in ' + (who ? 'your and joint budgets' : 'your budgets') + ' this month' + (both ? '. Together it’s ' + gbp(Math.max(0, both.perDay)) + ' a day.' : '.') : 'Budgets are ' + gbp(-safe.left) + ' over for this month.') + '</p>'
-      : '<span class="k">Safe to spend today</span><span class="huge">£?</span><p class="subl">Add your budgets in Plan and this shows what you can spend each day.</p>')
-    + '<div class="hchips">' + (streak ? '<span class="hchip">🔥 ' + plural(streak, "day") + ' streak</span>' : '<span class="hchip">✏️ Log a purchase to start a streak</span>') + '<a class="hchip" href="#flow">' + esc(nextMoveText(ym)) + '</a></div></section>';
+      : '<div class="herohead"><span class="k">Safe to spend today</span><span class="daysleft"><b>' + safe.daysLeft + '</b> ' + (safe.daysLeft === 1 ? "day" : "days") + ' left in ' + esc(ymLabel(ym).split(" ")[0]) + '</span></div>' + '<span class="huge">£?</span><p class="subl">Add your budgets in Plan and this shows what you can spend each day.</p>')
+    + '<div class="hchips">' + (streak ? '<span class="hchip"><i class="spark"></i>' + plural(streak, "day") + ' streak</span>' : '<span class="hchip"><i class="spark"></i>Log a purchase to start a streak</span>') + '<a class="hchip" href="#flow">' + esc(nextMoveText(ym)) + '</a></div></section>';
   // spend tile
   const months = [5, 4, 3, 2, 1, 0].map(i => addM(ym, -i)), vals = months.map(m => sum(expensesOf(m).map(e => e.amount))), mx = Math.max(1, ...vals);
   const day = new Date().getDate(), lastSame = sum(expensesOf(addM(ym, -1)).filter(e => +e.date.slice(8, 10) <= day).map(e => e.amount)), cur = vals[5];
   h += '<section class="tile t-ink b-spend"><div class="spendhead"><div><span class="k" style="opacity:1;color:var(--muted)">Spent in ' + esc(ymLabel(ym).split(" ")[0]) + '</span><div class="spendbig num" data-count="' + cur.toFixed(0) + '">' + gbp(cur) + '</div></div>'
     + (lastSame > 0 ? '<span class="pill ' + (cur <= lastSame ? "good" : "warn") + '">' + (cur <= lastSame ? "↓ " + gbp(lastSame - cur) + " less" : "↑ " + gbp(cur - lastSame) + " more") + ' than this time last month</span>' : '<a class="btn small" href="#spend">See purchases</a>') + '</div>'
-    + '<div class="mbars">' + months.map((m, i) => '<div class="col' + (i === 5 ? " cur" : "") + '" title="' + esc(ymLabel(m)) + ': ' + gbp(vals[i]) + '">' + (i === 5 && cur > 0 ? '<span class="note num" style="color:var(--accent);font-weight:700">' + gbp(cur) + '</span>' : '') + '<div class="b" style="height:' + Math.max(3, vals[i] / mx * 100).toFixed(1) + '%;background:' + (i === 5 ? "var(--accent)" : "repeating-linear-gradient(135deg,var(--surface2) 0 6px,var(--line2) 6px 9px)") + '"></div><span class="lb">' + esc(ymLabel(m, true).split(" ")[0]) + '</span></div>').join("") + '</div></section>';
+    + flowSpark(months, vals) + '</section>';
   // people
   const ptile = k => { const x = c[k], name = k === "j" ? "Joint" : nm(k), ini = k === "j" ? "&" : name.charAt(0);
     return '<div class="ptile ' + k + '"><div class="row between"><span class="av">' + esc(ini) + '</span><span class="tiny num">' + (x.income > 0 ? Math.round(x.util * 100) + "% used" : "") + '</span></div><span class="nm">' + esc(name) + '</span><span class="left num">' + (x.income > 0 ? gbp(Math.abs(x.left)) : "£0") + '</span><span class="tiny">' + (x.income > 0 ? (x.left < 0 ? "short" : "left") + " of " + gbp(x.income) : (k === "j" ? "Nothing moved in yet" : "Add income in Plan")) + '</span><div class="bar"><i style="width:' + Math.min(100, x.util * 100).toFixed(0) + '%"></i></div><span class="tiny">Bills ' + gbp(x.bills) + ', subs ' + gbp(x.subs) + '</span></div>'; };
@@ -688,11 +694,11 @@ function vHome() {
   if (al.length) h += '<div class="section-head"><h2>Worth a look</h2></div><section class="card"><ul class="alerts">' + al.map(a => '<li><span class="ic pill ' + a[0] + '" style="padding:0">' + a[1] + '</span><span>' + a[2] + '</span></li>').join("") + '</ul></section>';
   // challenges as chips
   const act = S.challenges.map(x => Object.assign({ x }, challengeStatus(x))).filter(s => s.state === "on" || s.state === "soon" || (s.end >= addD(todayISO(), -3)));
-  const chipCol = ["var(--lime)", "var(--pink)", "var(--peri)", "var(--orange)"];
   h += '<div class="section-head"><h2>Challenges</h2></div><div class="challenge-row">' + act.map((s, i) => {
     const x = s.x, st2 = s.state === "won" ? "Done!" : s.state === "lost" ? "Missed" : s.state === "soon" ? "Starts " + dayLabel(s.start) : plural(s.daysLeft, "day") + " left";
-    return '<button class="chip-c" data-act="editchal" data-id="' + esc(x.id) + '">' + token(chipCol[i % 4], x.emoji, s.state, x.id) + '<b>' + esc(x.name) + '</b><span class="note">' + esc(st2) + (x.kind === "under" ? ", " + gbp(s.spent) + " of " + gbp(s.limit) : s.spent > 0 ? ", " + gbp(s.spent) + " spent" : "") + '</span></button>';
-  }).join("") + '<button class="chip-c add" data-act="newchal"><span style="font-size:30px">+</span><b>New challenge</b><span class="note">No takeaway week, £50 food shop…</span></button></div>';
+    const days = +x.days || 7, frac = s.state === "soon" ? 0 : Math.min(1, s.dayNo / days);
+    return '<button class="chip-c ' + s.state + '" data-act="editchal" data-id="' + esc(x.id) + '"><span class="cstate">' + esc(st2) + '</span><b>' + (x.emoji ? '<span class="cemo">' + esc(x.emoji) + '</span>' : "") + esc(x.name) + '</b><span class="note">' + (x.kind === "under" ? gbp(s.spent) + " of " + gbp(s.limit) : s.spent > 0 ? gbp(s.spent) + " spent, so it’s missed" : "Nothing spent so far") + '</span><span class="bar"><i style="width:' + (frac * 100).toFixed(0) + '%"></i></span></button>';
+  }).join("") + '<button class="chip-c add" data-act="newchal"><span class="cstate">Try one</span><b>New challenge</b><span class="note">No takeaway week, £50 food shop…</span></button></div>';
   // budgets
   // coming up
   const ups = S.yearly.filter(y => !y.done && +y.amount > 0).map(y => ({ y, due: dueYM(y), n: monthsBetween(ym, dueYM(y)) })).filter(u => u.n >= 0 && u.n <= 6).sort((a, b) => a.n - b.n).slice(0, 4);
@@ -904,9 +910,20 @@ function vInsights() {
   let h = '<div class="stack"><div class="section-head"><h1>Insights</h1></div><div class="tabs">' + tabs.map(x => '<a class="tab' + (t === x[0] ? " on" : "") + '" href="#insights/' + x[0] + '">' + x[1] + '</a>').join("") + '</div>';
   return h + ({ forecast: iForecast, networth: iNetWorth, statements: iStatements })[t]() + '</div>';
 }
+/* Pick which x labels to show so none of them touch. w = chart width in the same units as x(). */
+function pickLabels(labels, x, fontPx, gap) {
+  const wOf = t => String(t).length * fontPx * .56, n = labels.length, out = [];
+  const box = i => { const w = wOf(labels[i]), cx = x(i); return i === 0 && n > 1 ? [cx, cx + w] : i === n - 1 ? [cx - w, cx] : [cx - w / 2, cx + w / 2]; };
+  const fits = i => { const b = box(i); return out.every(j => { const c = box(j); return b[1] + gap <= c[0] || c[1] + gap <= b[0]; }); };
+  out.push(n - 1); if (n > 1 && fits(0)) out.push(0);
+  const target = Math.min(6, n), step = Math.max(1, Math.round((n - 1) / (target - 1 || 1)));
+  for (let i = step; i < n - 1; i += step) if (fits(i)) out.push(i);
+  return out.sort((a, b) => a - b);
+}
+let CHART_ID = 0;
 function lineChart(series, labels, opts) {
   opts = opts || {};
-  const W = 640, H = 260, L = 70, R = 14, T = 14, B = 34;
+  const W = 640, H = 270, L = 64, R = 18, T = 16, B = 38, FS = 14;
   const all = series.flatMap(s => s.points).filter(v => v != null);
   if (!all.length) return '<div class="empty">Not enough data yet.</div>';
   let max = Math.max(...all, 0), min = Math.min(...all, 0);
@@ -914,17 +931,37 @@ function lineChart(series, labels, opts) {
   const step = Math.pow(10, Math.floor(Math.log10((max - min) / 4 || 1))), nice = [1, 2, 2.5, 5, 10].map(m => m * step).find(s => (max - min) / s <= 5) || step * 10;
   max = Math.ceil(max / nice) * nice; min = Math.floor(min / nice) * nice;
   const n = labels.length, x = i => L + (W - L - R) * (n > 1 ? i / (n - 1) : 0), y = v => T + (H - T - B) * (1 - (v - min) / (max - min));
+  const cid = "lc" + (++CHART_ID);
   let g = "";
-  for (let v = min; v <= max + 1e-9; v += nice) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" stroke="var(--line)" stroke-width="1"/><text x="' + (L - 8) + '" y="' + (y(v) + 4).toFixed(1) + '" text-anchor="end" font-size="15" fill="var(--muted)">' + (Math.abs(v) >= 1000 ? (v < 0 ? "minus " : "") + "£" + (Math.abs(v) / 1000) + "k" : gbp(v)) + '</text>';
-  const every = Math.ceil(n / 6);
-  labels.forEach((lb, i) => { if ((i % every === 0 && n - 1 - i >= every / 2) || i === n - 1) g += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="' + (i === n - 1 && n > 1 ? "end" : i === 0 ? "start" : "middle") + '" font-size="15" fill="var(--muted)">' + esc(lb) + '</text>'; });
-  const lines = series.map(s => {
-    const pts = s.points.map((v, i) => v == null ? null : x(i).toFixed(1) + "," + y(v).toFixed(1)).filter(Boolean);
-    const last = s.points.length - 1;
-    return '<polyline fill="none" stroke="' + s.color + '" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"' + (s.dash ? ' stroke-dasharray="5 5" opacity=".7"' : "") + ' points="' + pts.join(" ") + '"/>'
-      + (!s.dash && s.points[last] != null ? '<circle cx="' + x(last).toFixed(1) + '" cy="' + y(s.points[last]).toFixed(1) + '" r="4.5" fill="' + s.color + '" stroke="var(--surface)" stroke-width="2"/>' : "");
+  for (let v = min; v <= max + 1e-9; v += nice) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" stroke="var(--line)" stroke-width="1"' + (Math.abs(v) > 1e-9 ? ' stroke-dasharray="2 5"' : "") + '/><text x="' + (L - 10) + '" y="' + (y(v) + 4.5).toFixed(1) + '" text-anchor="end" font-size="' + FS + '" fill="var(--muted)">' + (Math.abs(v) >= 1000 ? (v < 0 ? "minus " : "") + "£" + (Math.abs(v) / 1000) + "k" : gbp(v)) + '</text>';
+  pickLabels(labels, x, FS, 14).forEach(i => { g += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="' + (i === n - 1 && n > 1 ? "end" : i === 0 ? "start" : "middle") + '" font-size="' + FS + '" fill="var(--muted)">' + esc(labels[i]) + '</text>'; });
+  let defs = "";
+  const lines = series.map((s, si) => {
+    const P = s.points.map((v, i) => v == null ? null : [x(i), y(v)]).filter(Boolean);
+    if (!P.length) return "";
+    const d = smoothPath(P), last = s.points.length - 1, base = y(Math.max(min, 0));
+    let out = "";
+    if (!s.dash && P.length > 1) {
+      defs += '<linearGradient id="' + cid + "g" + si + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:' + s.color + ';stop-opacity:.22"/><stop offset="1" style="stop-color:' + s.color + ';stop-opacity:0"/></linearGradient>';
+      out += '<path class="area" d="' + d + ' L' + P[P.length - 1][0].toFixed(1) + ' ' + base.toFixed(1) + ' L' + P[0][0].toFixed(1) + ' ' + base.toFixed(1) + 'Z" fill="url(#' + cid + "g" + si + ')"/>';
+    }
+    out += '<path class="ln" pathLength="1" d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="2.6" stroke-linecap="round"' + (s.dash ? ' stroke-dasharray="4 7" opacity=".65"' : "") + '/>';
+    if (!s.dash && s.points[last] != null) out += '<circle class="pt" cx="' + x(last).toFixed(1) + '" cy="' + y(s.points[last]).toFixed(1) + '" r="5" fill="' + s.color + '" stroke="var(--card)" stroke-width="2.5"/>';
+    return out;
   }).join("");
-  return '<div class="legend">' + series.filter(s => !s.hideLegend).map(s => '<span><i style="background:' + s.color + (s.dash ? ';opacity:.6' : '') + '"></i>' + esc(s.name) + '</span>').join("") + '</div><div class="chart"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(opts.label || "Chart") + '">' + g + lines + '</svg></div>';
+  return '<div class="legend">' + series.filter(s => !s.hideLegend).map(s => '<span><i style="background:' + s.color + (s.dash ? ';opacity:.6' : '') + '"></i>' + esc(s.name) + '</span>').join("") + '</div><div class="chart"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(opts.label || "Chart") + '"><defs>' + defs + '</defs>' + g + lines + '</svg></div>';
+}
+/* Six months of spending as one flowing line. */
+function flowSpark(months, vals) {
+  const W = 320, H = 130, T = 18, B = 26, Lp = 12, Rp = 12, mx = Math.max(1, ...vals);
+  const x = i => Lp + (W - Lp - Rp) * i / (vals.length - 1), y = v => T + (H - T - B) * (1 - v / mx);
+  const P = vals.map((v, i) => [x(i), y(v)]), d = smoothPath(P), cid = "fs" + (++CHART_ID), last = P[P.length - 1];
+  return '<svg class="flowspark" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Spending over six months"><defs><linearGradient id="' + cid + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent);stop-opacity:.28"/><stop offset="1" style="stop-color:var(--accent);stop-opacity:0"/></linearGradient></defs>'
+    + '<path class="area" d="' + d + ' L' + last[0].toFixed(1) + ' ' + (H - B) + ' L' + P[0][0].toFixed(1) + ' ' + (H - B) + 'Z" fill="url(#' + cid + ')"/>'
+    + '<path class="ln" pathLength="1" d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>'
+    + P.slice(0, -1).map((p, i) => '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.6" fill="var(--accent)" opacity=".5"><title>' + esc(ymLabel(months[i])) + ': ' + gbp(vals[i]) + '</title></circle>').join("")
+    + '<circle class="pulse" cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="9" fill="var(--accent)" opacity=".18"/><circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="4.5" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>'
+    + months.map((m, i) => '<text x="' + x(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + (i === 0 ? "start" : i === months.length - 1 ? "end" : "middle") + '" font-size="11" fill="var(--muted)"' + (i === months.length - 1 ? ' font-weight="700"' : "") + '>' + esc(ymLabel(m, true).split(" ")[0]) + '</text>').join("") + '</svg>';
 }
 function iForecast() {
   const fx = ui.fx, months = 24, labels = Array.from({ length: months + 1 }, (_, i) => i === 0 ? "Now" : ymLabel(addM(thisYM(), i - 1), true));
@@ -1090,8 +1127,8 @@ function readCSV(file) {
 function vSettings() {
   const s = st(), sh = jointShares(), need = jointNeed();
   let h = '<div class="stack"><div class="section-head"><h1>Settings</h1></div>';
-  const th = LS.get("ms-theme") || "paper";
-  h += '<section class="card"><h2>Look</h2><p class="sub">Just for this phone or computer. The other person keeps their own choice.</p><div class="chips">' + [["paper", "Paper, light and calm"], ["night", "Night, dark and bold"], ["auto", "Match my phone"]].map(o => '<button class="chip' + (th === o[0] ? " on" : "") + '" data-act="theme" data-v="' + o[0] + '">' + o[1] + '</button>').join("") + '</div></section>';
+  const th = (LS.get("ms-theme") || "chrome").replace("night", "chrome");
+  h += '<section class="card"><h2>Look</h2><p class="sub">Just for this phone or computer. The other person keeps their own choice.</p><div class="chips">' + [["chrome", "Liquid chrome, dark"], ["paper", "Paper, light and calm"], ["auto", "Match my phone"]].map(o => '<button class="chip' + (th === o[0] ? " on" : "") + '" data-act="theme" data-v="' + o[0] + '">' + o[1] + '</button>').join("") + '</div></section>';
   h += '<section class="card" data-keep><h2>The two of you</h2><div class="fgrid">'
     + PEOPLE.map(p => '<label class="field">Name<input id="nm-' + p + '" value="' + esc(s.names[p]) + '"></label><label class="field">Pay day<input id="pd-' + p + '" inputmode="numeric" value="' + s.payday[p] + '"></label><label class="field full">' + esc(nm(p)) + '’s sign in email<input id="em-' + p + '" type="email" value="' + esc(s.emails[p] || "") + '" placeholder="Used to greet you and show who added what"></label>').join("")
     + '</div><button class="btn primary" data-act="savepeople" style="align-self:flex-start">Save</button></section>';

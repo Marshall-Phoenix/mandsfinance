@@ -68,9 +68,9 @@ export function pebble(opts) {
   }).join("");
   const hasE = !!opts.emoji, txt = 'stroke="var(--bg)" stroke-width="5" stroke-linejoin="round" paint-order="stroke"';
   return '<svg class="pebble" viewBox="0 0 112 112" role="img" aria-label="' + esc(opts.label || "") + '"><defs><clipPath id="' + id + '">' + blobEl(seed, cx, cy, R, amp) + '</clipPath></defs>'
-    + blobEl(seed, cx, cy, R, amp, 'fill="url(#hatch)"')
-    + '<g clip-path="url(#' + id + ')">' + waves + '</g>'
-    + blobEl(seed, cx, cy, R, amp, 'fill="none" stroke="var(--line2)" stroke-width="1.5"')
+    + blobEl(seed, cx, cy, R, amp, 'fill="var(--pebble)"')
+    + '<g clip-path="url(#' + id + ')">' + waves + (segs.length ? '<path data-wave="' + toBox(segs[segs.length - 1].lvl).toFixed(3) + '" data-ph="' + ((seed % 100) / 15 + 2.4).toFixed(2) + '" data-a="2.2" d="' + waveD(0, 112, 112, 2, 0, 0, 1.1) + '" fill="#fff" opacity=".22"/>' : "") + '</g>'
+    + blobEl(seed, cx, cy, R, amp, 'fill="none" stroke="var(--pebble-line)" stroke-width="1"')
     + (hasE ? '<text x="56" y="44" text-anchor="middle" font-size="18">' + esc(opts.emoji) + '</text>' : "")
     + '<text x="56" y="' + (hasE ? 66 : (opts.sub ? 56 : 62)) + '" text-anchor="middle" class="pv" font-size="' + (hasE ? 21 : 24) + '" fill="var(--ink)" ' + txt + '>' + esc(opts.centre) + '</text>'
     + (opts.sub ? '<text x="56" y="' + (hasE ? 80 : 73) + '" text-anchor="middle" font-size="11" font-weight="600" fill="var(--ink2)" ' + txt + '>' + esc(opts.sub) + '</text>' : "") + '</svg>';
@@ -96,9 +96,29 @@ export function token(color, emoji, state, seedStr) {
 /* Logo: two overlapping blobs. */
 export function mark(cls, style) {
   return '<svg class="' + (cls || "mark") + '"' + (style ? ' style="' + style + '"' : "") + ' viewBox="0 0 40 40" aria-hidden="true">'
-    + blobEl(11, 20, 20, 18.5, .07, 'fill="var(--lime)"', 0, .5)
-    + blobEl(21, 15.5, 20, 8.6, .14, 'fill="var(--peri)" stroke="var(--dark)" stroke-width="2.2"', 0, 1.3)
-    + blobEl(37, 24.5, 20, 8.6, .14, 'fill="var(--pink)" stroke="var(--dark)" stroke-width="2.2" style="mix-blend-mode:multiply"', 0, 1.1) + '</svg>';
+    + blobEl(21, 15, 21, 11.5, .12, 'fill="var(--m)" opacity=".9"', 0, .7)
+    + blobEl(37, 25, 19, 11.5, .12, 'fill="var(--s)" opacity=".85" style="mix-blend-mode:multiply"', 0, .6)
+    + blobEl(53, 21, 24, 6, .2, 'fill="var(--j)" opacity=".9" style="mix-blend-mode:multiply"', 0, .9) + '</svg>';
+}
+
+/* Topographic contour lines: nested organic rings that drift very slowly. */
+export function contours(seedStr, cls, rings) {
+  const seed = hash(seedStr || "c"), n = rings || 7;
+  let g = "";
+  for (let i = 0; i < n; i++) g += blobEl(seed + i * 3, 100, 100, 14 + i * 13, .1 + i * .012, 'fill="none" stroke="currentColor" stroke-width="1"', 0, .12 + i * .015);
+  return '<svg class="' + (cls || "contours") + '" viewBox="0 0 200 200" aria-hidden="true">' + g + '</svg>';
+}
+
+/* Smooth curve through points (monotone, so it never overshoots the data). */
+export function smoothPath(P) {
+  const n = P.length; if (n < 2) return P.length ? "M" + f1(P[0][0]) + " " + f1(P[0][1]) : "";
+  const dx = [], m = [], t = [];
+  for (let i = 0; i < n - 1; i++) { dx[i] = P[i + 1][0] - P[i][0]; m[i] = (P[i + 1][1] - P[i][1]) / (dx[i] || 1); }
+  t[0] = m[0]; t[n - 1] = m[n - 2];
+  for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : 3 * (dx[i - 1] + dx[i]) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i]);
+  let d = "M" + f1(P[0][0]) + " " + f1(P[0][1]);
+  for (let i = 0; i < n - 1; i++) { const h = dx[i] / 3; d += "C" + f1(P[i][0] + h) + " " + f1(P[i][1] + h * t[i]) + " " + f1(P[i + 1][0] - h) + " " + f1(P[i + 1][1] - h * t[i + 1]) + " " + f1(P[i + 1][0]) + " " + f1(P[i + 1][1]); }
+  return d;
 }
 
 /* Flowing lines (replace the static squiggle). */
