@@ -95,7 +95,7 @@ const emo = x => x && x.emoji ? '<span class="emo">' + esc(x.emoji) + '</span> '
 /* ================= data layer ================= */
 let DB = null;
 function memoryDB() {
-  const KEY = "ms-demo-v3";
+  const KEY = "ms-demo-v4";
   let data;
   try { data = JSON.parse(LS.get(KEY) || "null"); } catch (e) { data = null; }
   if (!data) data = demoData();
@@ -607,6 +607,7 @@ function draw() {
   app.querySelectorAll(".tile,.ptile,.ring,.chip-c,.up,.recapbar").forEach(el => el.classList.add("tilt"));
   tilt(app);
   const hero = app.querySelector(".b-hero");
+  fitNumbers(app);
   // tables become labelled cards on small screens
   app.querySelectorAll("table").forEach(tb => { const hs = Array.from(tb.querySelectorAll("thead th")).map(th => th.textContent.trim()); tb.querySelectorAll("tbody tr, tfoot tr").forEach(tr => Array.from(tr.children).forEach((td, i) => { if (hs[i] && !td.dataset.label) td.dataset.label = hs[i]; })); });
   if (worldOn()) { syncWorld(); World.go(STATION[ui.route] || "home"); scramble(app); }
@@ -699,6 +700,16 @@ document.addEventListener("pointerup", () => {
   d.rot.style.setProperty("--rot", (-i * DIAL_STEP) + "deg");
   if (DIAL[i][0] !== (ui.route === "statement" ? "insights" : ui.route)) location.hash = "#" + DIAL[i][0];
 });
+/* shrink any big number that would not fit its box, instead of cutting it off */
+function fitNumbers(root) {
+  root.querySelectorAll(".ptile .left, .huge, .spendbig, .stage-num, .up .big, .item .amt, .kv span").forEach(el => {
+    el.style.fontSize = "";
+    let fs = parseFloat(getComputedStyle(el).fontSize), n = 0;
+    const box = el.parentElement; if (!box) return;
+    while (n++ < 14 && (el.scrollWidth > el.clientWidth + 1 || el.getBoundingClientRect().right > box.getBoundingClientRect().right - parseFloat(getComputedStyle(box).paddingRight) + 1)) { fs *= .92; el.style.fontSize = fs.toFixed(1) + "px"; }
+  });
+}
+window.addEventListener("resize", () => { const a = $("#app"); if (a) fitNumbers(a); });
 /* the dial tucks away while you scroll down and comes back when you scroll up */
 let lastSY = 0;
 window.addEventListener("scroll", () => {
@@ -724,7 +735,8 @@ function shell(body) {
   const links = () => nav.map(n => '<a class="navbtn' + (cur === n[0] ? " on" : "") + '" href="#' + n[0] + '">' + svg(n[2]) + n[1] + '</a>').join("");
   const brand = '<a class="brand" href="#home">' + MARK + '<span><b>' + esc(nm("m")) + ' &amp; ' + esc(nm("s")) + '</b><small>Household money</small></span></a>';
   if (worldOn()) {
-    const top = '<header class="wtop"><a class="brand" href="#home">' + MARK + '<span class="mono">' + esc(nm("m")) + ' &amp; ' + esc(nm("s")) + '</span></a><span class="mono dim wclock">' + esc(new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })) + '</span><a class="mono wlink" href="#settings">Settings</a></header>';
+    const canBack = ui.route !== "home" || (ui.hist && ui.hist.length);
+    const top = '<header class="wtop">' + (canBack ? '<button class="wback" data-act="back" aria-label="Back">' + svg("back", 18) + '<span class="mono">Back</span></button>' : "") + '<a class="brand" href="#home">' + MARK + '<span class="mono">' + esc(nm("m")) + ' &amp; ' + esc(nm("s")) + '</span></a><span class="mono dim wclock">' + esc(new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })) + '</span><a class="mono wlink" href="#settings">Settings</a></header>';
     return '<div class="wshell">' + top + stageHTML() + '<main class="main">' + (S.mode === "demo" ? '<div class="banner info noprint" style="margin-bottom:14px">Sample numbers only. Nothing here is real or shared.</div>' : "") + body + '</main></div>' + dialHTML();
   }
   return '<div class="shell"><aside class="side">' + brand + '<div class="sidenav"><span class="navblob" data-k="side"></span>' + links() + '</div><span class="grow"></span><a class="navbtn' + (cur === "settings" ? " on" : "") + '" href="#settings">' + svg("gear") + 'Settings</a></aside>'
@@ -873,7 +885,7 @@ function vSpend() {
   }).join("");
   const known = new Set(S.budgets.map(b => b.id)), isOther = e => !e.budgetId || !known.has(e.budgetId);
   const oth = E.filter(isOther), othSum = sum(oth.map(e => e.amount));
-  const rowsAll = rows + (oth.length ? '<tr class="other-row"><td class="name">✳️ Other, not in a budget</td><td></td><td class="r"><span class="muted">None</span></td><td class="r">' + gbp(othSum, 1) + '</td><td class="r"></td></tr>' : "");
+  const rowsAll = rows + (oth.length ? '<tr class="other-row"><td class="name">Other, not in a budget</td><td></td><td class="r"><span class="muted">None</span></td><td class="r">' + gbp(othSum, 1) + '</td><td class="r"></td></tr>' : "");
   h += '<section class="card"><div class="row between"><h3>Running budgets</h3><span class="num"><b>' + gbp(total, 1) + '</b> <span class="muted">spent</span></span></div><div class="tablewrap"><table><thead><tr><th>Name</th><th>Whose</th><th class="r">Budget</th><th class="r">Running cost</th><th class="r">Budget left</th></tr></thead><tbody>' + rowsAll + '</tbody></table></div></section>';
   { // what keeps turning up outside the budgets, over the last 3 months
     const since = addM(ym, -2), groups = {};
@@ -1357,7 +1369,7 @@ function openExpense(id, budgetId) {
 }
 const amtHTML = () => '<span>£</span>' + esc(ui.sheet.amt || "0");
 const budChips = () => S.budgets.map(b => '<button type="button" class="chip' + (ui.sheet.budgetId === b.id ? " on" : "") + '" data-act="xbud" data-v="' + esc(b.id) + '">' + (b.emoji ? esc(b.emoji) : '<span class="dot ' + esc(b.who) + '"></span>') + esc(b.name) + '</button>').join("")
-  + '<button type="button" class="chip other' + (!ui.sheet.budgetId ? " on" : "") + '" data-act="xbud" data-v="">✳️ Other, not in a budget</button>';
+  + '<button type="button" class="chip other' + (!ui.sheet.budgetId ? " on" : "") + '" data-act="xbud" data-v=""><span class="dot dash"></span>Other, not in a budget</button>';
 const whoChips = () => WHO.map(k => '<button type="button" class="chip' + (ui.sheet.who === k ? " on" : "") + '" data-act="xwho" data-v="' + k + '"><span class="dot ' + k + '"></span>' + esc(nm(k)) + '</button>').join("");
 function padPress(k) {
   let a = ui.sheet.amt || "";
@@ -1538,6 +1550,7 @@ async function onAct(el) {
     case "flm": ui.flowYM = addM(ui.flowYM, +v); render(); break;
     case "tick": { const ym = el.dataset.ym, k = el.dataset.k; try { await DB.merge("ticks", ym, { done: { [k]: !ticked(ym, k) } }); } catch (e) { fail(e); } break; }
     case "go": location.hash = "#" + v; break;
+    case "back": { const h = ui.hist || []; location.hash = "#" + (h.length ? h[h.length - 1] : "home"); break; }
     case "print": window.print(); break;
     case "iam": {
       if (S.mode === "demo") { LS.set("ms-me", v); render(); break; }
@@ -1672,6 +1685,14 @@ document.addEventListener("keydown", e => {
 $("#sheet").addEventListener("click", e => { if (e.target.id === "sheet") closeSheet(); });
 
 function route() {
+  const was = ui.lastHash, now = (location.hash || "#home").slice(1);
+  ui.hist = ui.hist || [];
+  if (was && was !== now) {
+    // going to the page we just came from counts as going back (also covers the phone's own back gesture)
+    if (ui.hist.length && ui.hist[ui.hist.length - 1] === now) ui.hist.pop();
+    else { ui.hist.push(was); if (ui.hist.length > 30) ui.hist.shift(); }
+  }
+  ui.lastHash = now;
   const h = (location.hash || "#home").slice(1).split("/");
   ui.route = ["home", "spend", "flow", "plan", "insights", "statement", "settings", "import"].includes(h[0]) ? h[0] : (h[0] === "statements" ? "insights" : "home");
   ui.sub = h[0] === "statements" ? "statements" : (h[1] || "");
@@ -1691,6 +1712,7 @@ window.addEventListener("hashchange", route);
 
 /* ================= boot ================= */
 (async function boot() {
+  ui.lastHash = (location.hash || "#home").slice(1); ui.hist = [];
   const h = (location.hash || "#home").slice(1).split("/"); ui.route = h[0] || "home"; ui.sub = h[1] || "";
   if (ui.route === "statements") { ui.route = "insights"; ui.sub = "statements"; }
   backdrop();

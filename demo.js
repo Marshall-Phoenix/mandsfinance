@@ -11,10 +11,12 @@ export function demoData() {
     { id: "b3", name: "Transport", who: "m", amount: 150, emoji: "🚕" },
     { id: "b4", name: "Beauty & wellbeing", who: "s", amount: 100, emoji: "💅", color: "purple" },
     { id: "b5", name: "Fuel", who: "s", amount: 80, emoji: "⛽" },
-    { id: "b6", name: "Misty", who: "j", amount: 40, emoji: "🐱", color: "teal" }
+    { id: "b6", name: "Misty", who: "j", amount: 40, emoji: "🐱", color: "teal" },
+    { id: "b7", name: "Car repairs and upcoming stuff", who: "j", amount: 200 },
+    { id: "b8", name: "Gifts and occasions for family", who: "s", amount: 1250 }
   ];
-  const notes = { b1: ["Tesco", "Aldi", "Asda", "Lidl"], b2: ["Takeaway", "Lunch", "Pizza"], b3: ["Taxi", "Train"], b4: ["Hair", "Boots"], b5: ["Fuel"], b6: ["Cat litter", "Treats"] };
-  const amts = { b1: [38, 62, 24, 71, 45], b2: [14, 26, 9, 31], b3: [11, 9, 24], b4: [35, 18], b5: [40, 38], b6: [12, 8] };
+  const notes = { b7: ["Garage"], b8: ["Gift"], b1: ["Tesco", "Aldi", "Asda", "Lidl"], b2: ["Takeaway", "Lunch", "Pizza"], b3: ["Taxi", "Train"], b4: ["Hair", "Boots"], b5: ["Fuel"], b6: ["Cat litter", "Treats"] };
+  const amts = { b7: [120], b8: [340, 95], b1: [38, 62, 24, 71, 45], b2: [14, 26, 9, 31], b3: [11, 9, 24], b4: [35, 18], b5: [40, 38], b6: [12, 8] };
   const expenses = [];
   let seed = 7; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
   [-2, -1, 0].forEach(k => {
@@ -36,7 +38,7 @@ export function demoData() {
       s: { gross: 2900, deductions: [{ name: "Tax", amount: 400 }, { name: "National Insurance", amount: 150 }, { name: "Pension", amount: 115 }, { name: "Student loan", amount: 40 }], extras: [] }
     },
     bills: map([
-      { id: "x1", name: "Mortgage", cost: 600, acct: "j", day: 1 },
+      { id: "x1", name: "Buildings and contents insurance", cost: 38.5, acct: "j", day: 1 },
       { id: "x2", name: "Council tax", cost: 150, acct: "j", day: 7 },
       { id: "x3", name: "Gas & electric", cost: 140, acct: "j", day: 28 },
       { id: "x4", name: "Internet", cost: 35, acct: "j", day: 21 },
@@ -53,11 +55,13 @@ export function demoData() {
       { id: "d1", name: "Bank loan", who: "s", borrowed: 10000, apr: 7, balance: 8200, monthly: 175, day: 1, interestPaid: 610 },
       { id: "d2", name: "Credit card", who: "s", borrowed: 1500, apr: 23.9, balance: 1200, monthly: 90, day: 30, interestPaid: 140, emoji: "💳" },
       { id: "d3", name: "Family loan", who: "m", borrowed: 4000, apr: 0, balance: 3500, monthly: 250, day: 17, interestPaid: 0, emoji: "🇮🇳", inr: true, notes: "Sent to Mum, who passes it to my aunt." },
-      { id: "d4", name: "Overdraft", who: "s", borrowed: 0, apr: 0, balance: 400, monthly: 0, day: 1, interestPaid: 0 }
+      { id: "d4", name: "Overdraft", who: "s", borrowed: 0, apr: 0, balance: 1500, monthly: 0, day: 1, interestPaid: 0 },
+      { id: "d5", name: "Mortgage", who: "j", borrowed: 165000, apr: 4.4, balance: 161048.37, monthly: 1012.55, day: 1, interestPaid: 3944.82 }
     ]),
     budgets: map(budgets),
     pots: map([
-      { id: "p1", name: "Emergency fund", who: "j", goal: 10000, monthly: 500, current: 1500, day: 28, emoji: "🛟" },
+      { id: "p1", name: "Emergency fund", who: "j", goal: 15000, monthly: 500, current: 11250.75, day: 28, emoji: "🛟" },
+      { id: "p5", name: "House deposit", who: "j", goal: 30000, monthly: 0, current: 0, day: 28 },
       { id: "p2", name: "Holiday", who: "j", goal: 5000, monthly: 100, current: 1180, day: 28, emoji: "✈️" },
       { id: "p3", name: "Visa fund", who: "m", goal: 3000, monthly: 200, current: 700, day: 15, emoji: "🛂", inr: true },
       { id: "p4", name: "Wedding", who: "j", goal: 0, monthly: 0, current: 0, day: 28, emoji: "💍" }

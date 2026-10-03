@@ -172,7 +172,7 @@ function buildFlow(d) {
     ring.rotation.x = Math.PI / 2; ring.position.copy(P[k]); s.spinner.add(pick(ring, { type: "account", who: k }));
     const pool = new T.Mesh(new T.CircleGeometry(.47, 64), new T.MeshBasicMaterial({ color: COL[k], transparent: true, opacity: .28, blending: T.AdditiveBlending, depthWrite: false }));
     pool.rotation.x = -Math.PI / 2; pool.position.copy(P[k]); s.spinner.add(pool);
-    s.anchors[k] = P[k].clone().add(new T.Vector3(0, .7, 0));
+    s.anchors[k] = P[k].clone().add(new T.Vector3(0, k === "j" ? .75 : -.62, 0));
   });
   const sink = new T.Mesh(new T.TorusGeometry(.3, .02, 12, 64), new T.MeshBasicMaterial({ color: "#8a8ca3", transparent: true, opacity: .5 }));
   sink.rotation.x = Math.PI / 2; sink.position.copy(P.out); s.spinner.add(sink); s.anchors.out = P.out.clone().add(new T.Vector3(0, -.45, 0));
@@ -243,7 +243,7 @@ function buildDust() {
 function framing() {
   // where on screen the station sits: in the top stage on phones, to the right on wide screens
   const w = innerWidth, h = innerHeight, wide = w >= 900;
-  return { fx: wide ? .7 : .5, fy: wide ? .42 : .2, dist: wide ? 7.6 : (w / h < .62 ? 13 : 10) };
+  return { fx: wide ? .7 : .5, fy: wide ? .42 : .21, dist: wide ? 7.6 : (w / h < .62 ? 13 : 11) };
 }
 function viewFor(name) {
   const p = new T.Vector3().fromArray(POS[name]), f = framing(), narrow = innerWidth < 900;
